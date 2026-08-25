@@ -18,85 +18,57 @@ playable on your server.
 - Python 3.11+ (needs `tomllib`)
 - Guests on the same network as the machine running LMS Request
 
-## Releasing and deploying
+## Quick start
 
-Images are published to GitHub Container Registry by
-[`.github/workflows/release.yml`](.github/workflows/release.yml). Tests run
-first, so a failing build never publishes.
-
-**One-time setup.** Create the repo and push:
+Prebuilt images are published to `ghcr.io/sbrown7792/lms-request`. On the host
+that will run it:
 
 ```bash
-git remote add origin https://github.com/sbrown7792/lms-request.git
-git push -u origin root
+git clone https://github.com/sbrown7792/lms-request.git
+cd lms-request
+cp .env.example .env
+$EDITOR .env        # set LMS_HOST at minimum
+docker compose -f docker-compose.deploy.yml up -d
+docker compose -f docker-compose.deploy.yml logs -f   # host password printed here
 ```
 
-Pushing `.github/workflows/` needs a token with the `workflow` scope:
+That pulls the image rather than building it — only `docker-compose.deploy.yml`
+and `.env` are actually needed, so you can copy those two files instead of
+cloning.
+
+Or a single command, no files at all:
 
 ```bash
-gh auth refresh -h github.com -s workflow
+docker run -d --name lms-request -p 8080:8080 -v lms-request-data:/data \
+  -e LMSREQUEST_LMS_HOST=lms -e LMSREQUEST_HOST_TOKEN=pick-something \
+  ghcr.io/sbrown7792/lms-request:latest
 ```
 
-**Cut a release.** Bump `VERSION`, commit, then tag:
+While the package is private, authenticate first with a token that has
+`read:packages`:
 
 ```bash
-echo 0.2.0 > VERSION
-git commit -am "Release 0.2.0"
-git tag v0.2.0 && git push --tags
+echo "$GITHUB_TOKEN" | docker login ghcr.io -u <your-github-user> --password-stdin
 ```
 
-That publishes `:0.2.0`, `:0.2` and `:latest`. Pushes to `root` (the default branch) publish `:edge`.
-The running container reports which build it is:
+Then open `http://<that-host>:8080/host`, and see [Running the
+party](#running-the-party).
 
-```bash
-curl -s http://target:8080/healthz
-# {"ok":true,"version":"0.2.0","commit":"a1b2c3…","built":"…"}
-```
-
-**Deploy on the other host.** Copy two files and start it:
-
-```bash
-scp docker-compose.deploy.yml .env.example target:/opt/lms-request/
-ssh target 'cd /opt/lms-request && mv .env.example .env && $EDITOR .env'
-ssh target 'cd /opt/lms-request && docker compose -f docker-compose.deploy.yml up -d'
-```
-
-Set at least `GHCR_OWNER` and `LMS_HOST` in `.env`. If the package is private,
-`docker login ghcr.io` on the target first with a token that has `read:packages`.
-
-Then the deployment smoke test — this is the one thing CI can't check, because it
-needs a real LMS:
+Confirm it can actually reach LMS and TIDAL — the one check CI can't do, because
+it needs a real server:
 
 ```bash
 docker compose -f docker-compose.deploy.yml exec lms-request python scripts/probe.py
 ```
 
-**Architecture.** The workflow builds `linux/amd64` only. For a Raspberry Pi,
-add `linux/arm64` to `platforms:` in the workflow — it works, but the emulated
-`pip install` roughly doubles the job time.
-
-## Building the image locally
+## Building the image yourself
 
 ```bash
+git clone https://github.com/sbrown7792/lms-request.git
+cd lms-request
 docker compose up -d --build
 docker compose logs -f lms-request        # the host password is printed here
 ```
-
-Or without compose:
-
-```bash
-docker build -t lms-request .
-docker run -d --name lms-request -p 8080:8080 -v lms-request-data:/data \
-  -e LMSREQUEST_LMS_HOST=lms -e LMSREQUEST_HOST_TOKEN=pick-something lms-request
-```
-
-> **Not yet built or run.** The machine this was developed on has no container
-> runtime, so the image is unverified. What *was* verified is the code path the
-> container takes: LMS Request starting with no config file, configured purely by the
-> environment variables below, writing its database to a separate data
-> directory, minting and logging a host password, and importing cleanly in a
-> fresh virtualenv built from `requirements.txt` alone. Expect the Dockerfile
-> itself to need a nudge on first build.
 
 **Mount `/data`.** It holds `lmsrequest.db`: the cookie-signing secret, the ban
 list, the host's player and playlist choices, and the request log. Without a
@@ -120,9 +92,9 @@ volume, every restart logs the host out and forgets the bans.
 Precedence is defaults, then `config.toml` if it exists, then the environment. An
 unparseable value is logged and ignored rather than fatal.
 
-`config.toml` is in `.dockerignore` on purpose — it carries `dev.allowed_players`,
-and an image built with that baked in would refuse to play on anything but the
-developer's own speaker.
+`config.toml` is in `.dockerignore` on purpose, so the image is configured only
+by its environment and can never ship someone's local settings — a stale
+`allowed_players` baked into an image would leave it refusing to play at all.
 
 **Networking.** LMS Request only speaks HTTP to LMS on port 9000, so ordinary bridge
 networking is enough — no host networking, multicast or slimproto, unlike LMS
@@ -158,13 +130,14 @@ docker compose exec lms-request python scripts/probe.py
    so it never sits in a URL or in browser history. Changing `host.token`
    invalidates any cookie already issued. Five wrong passwords from one address
    locks that address out for a minute, so it can't be guessed at speed.
-2. **Pick a player.** Every LMS player is listed, including group players like
-   `_Whole House`.
-3. **Pick a default playlist** from your saved TIDAL playlists. There's a filter
-   box — 84 playlists is a lot to scroll.
-4. **Name the party.** Guests see "Playing at *your name*". They're never shown
-   the player name — `Satellite_Right` means nothing to them, and it isn't in
-   the public API response either. Leave it blank to show nothing.
+2. **Pick a player.** Every LMS player is listed, including group players
+   (a group counts as one target, so a whole-house group works).
+3. **Pick a default playlist** from your saved TIDAL playlists. There's a
+   filter box, which earns its keep once you have more than a screenful.
+4. **Name the party.** Guests see "Playing at *your name*". They're never
+   shown the player name — which speaker the sound comes out of means nothing
+   to them, and it isn't in the public API response either. Leave it blank to
+   show nothing.
 5. **Load playlist & play.** The queue is filled with a shuffled copy and set to
    repeat, so it loops all night.
 6. Put `/tv` on a spare screen. Now playing fills the top of the screen — album
@@ -273,14 +246,17 @@ of three ways:
 
 ```bash
 # config.toml
-allowed_players = ["b8:27:eb:db:80:2d"]
+allowed_players = ["00:04:20:12:34:56"]
 
 # environment, including Docker
-LMSREQUEST_ALLOWED_PLAYERS=b8:27:eb:db:80:2d,b8:27:eb:69:15:f0
+LMSREQUEST_ALLOWED_PLAYERS=00:04:20:12:34:56,00:04:20:ab:cd:ef
 
 # .env in the project root — gitignored, picked up by run.sh
-echo 'LMSREQUEST_ALLOWED_PLAYERS=b8:27:eb:db:80:2d' > .env
+echo 'LMSREQUEST_ALLOWED_PLAYERS=00:04:20:12:34:56' > .env
 ```
+
+Player ids are MAC addresses. The host console's player list shows them, and so
+does `scripts/probe.py`.
 
 `docker-compose.deploy.yml` wires it to `ALLOWED_PLAYERS` in `.env`. CI asserts
 the committed `config.toml` leaves it off, because a repo that ships with the
@@ -344,9 +320,9 @@ already in the queue has to account for that; inserting a fresh one doesn't.
 
 ### Gotchas worth knowing
 
-- TIDAL track URLs end `.flc` on this server, not `.flac`, and the extension
-  follows the plugin's quality setting. Never build a URL — use the one the
-  server returns.
+- TIDAL track URLs carry an abbreviated extension — `.flc`, not `.flac` — and
+  it follows the plugin's quality setting, so it differs between installs.
+  Never build a URL; use the one the server returns.
 - LMS names its result list differently per query (`players_loop`, `loop_loop`,
   `item_loop`, `titles_loop`), so `LMS.rows()` matches on the `_loop` suffix.
 - Playlist node ids like `3.2` are positional. LMS Request stores the playlist *name*
@@ -379,6 +355,38 @@ with nothing in the log.
 - CSS grid items default to `min-width: auto`; one long playlist name overflowed
   the page until `.grid2 > * { min-width: 0 }`.
 - A `display: block` rule beats the `hidden` attribute's UA `display: none`.
+
+## Releasing (maintainers)
+
+Images are published to GitHub Container Registry by
+[`.github/workflows/release.yml`](.github/workflows/release.yml). Tests run
+first, so a failing build never publishes.
+
+Pushing changes under `.github/workflows/` needs a token with the `workflow`
+scope: `gh auth refresh -h github.com -s workflow`.
+
+**Cut a release.** Bump `VERSION`, commit, then tag:
+
+```bash
+echo 0.2.0 > VERSION
+git commit -am "Release 0.2.0"
+git tag v0.2.0 && git push --tags
+```
+
+That publishes `:0.2.0`, `:0.2` and `:latest`. Pushes to `root` (the default branch) publish `:edge`.
+The running container reports which build it is:
+
+```bash
+curl -s http://target:8080/healthz
+# {"ok":true,"version":"0.2.0","commit":"a1b2c3…","built":"…"}
+```
+
+If the package is private, consumers need `docker login ghcr.io` on the target
+with a token carrying `read:packages`.
+
+**Architecture.** The workflow builds `linux/amd64` only. For a Raspberry Pi,
+add `linux/arm64` to `platforms:` in the workflow — it works, but the emulated
+`pip install` roughly doubles the job time.
 
 ## Layout
 

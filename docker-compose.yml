@@ -28,7 +28,7 @@ services:
       # Safety guard, off unless set: a comma-separated list of player ids that
       # may receive commands. Everything else appears in the picker but is
       # refused. Handy for a dry run before the party.
-      # LMSREQUEST_ALLOWED_PLAYERS: "b8:27:eb:db:80:2d,b8:27:eb:69:15:f0"
+      # LMSREQUEST_ALLOWED_PLAYERS: "00:04:20:12:34:56,00:04:20:ab:cd:ef"
     # Uncomment if 'lms' does not resolve inside the container.
     # extra_hosts:
     #   - "lms:192.168.250.250"

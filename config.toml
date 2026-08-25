@@ -51,12 +51,13 @@ max_pending_per_guest = 3
 # Useful while developing, so a test run cannot start music in the wrong room.
 # Uncomment and list player ids (MAC addresses) to switch it on:
 #
-#   allowed_players = ["b8:27:eb:db:80:2d"]
+#   allowed_players = ["00:04:20:12:34:56"]
 #
 # Or set it without editing this file, which is how the container does it:
 #
-#   LMSREQUEST_ALLOWED_PLAYERS=b8:27:eb:db:80:2d,b8:27:eb:69:15:f0
+#   LMSREQUEST_ALLOWED_PLAYERS=00:04:20:12:34:56,00:04:20:ab:cd:ef
 #
-# For local development, put that line in a .env file (gitignored) and run.sh
-# will pick it up.
+# Player ids are MAC addresses; the host console's player list shows them, and
+# so does scripts/probe.py. For local development, put that line in a .env file
+# (gitignored) and run.sh will pick it up.
 allowed_players = []
