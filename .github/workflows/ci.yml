@@ -1,18 +1,19 @@
 name: tests
 
 on:
-  push:
-    branches: [root]
   pull_request:
-  workflow_call:          # so the release workflow can gate on this
+  # Called by the release workflow, which gates publishing on it. No push
+  # trigger: release.yml already runs on every push to the default branch, and
+  # having both meant the tests ran twice for the same commit.
+  workflow_call:
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
