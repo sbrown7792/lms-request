@@ -15,6 +15,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from lmsrequest.lms import LMS, resolve_art_ref
 from lmsrequest.party import Party, RequestRefused
 from lmsrequest.ratelimit import RateLimiter
 from lmsrequest.store import Store
@@ -88,6 +89,82 @@ class FakeLMS:
 
     def image_url(self, path):
         return path
+
+
+class ArtworkProxyTests(unittest.TestCase):
+    """Clients cannot reach LMS, so no LMS URL may ever escape to one."""
+
+    BASE = "http://lms:9000"
+    HOST = "lms"
+
+    def resolve(self, ref):
+        return resolve_art_ref(ref, self.BASE, self.HOST)
+
+    def test_relative_path_resolves_against_lms(self) -> None:
+        self.assertEqual(
+            self.resolve("/imageproxy/abc/image.jpg"),
+            "http://lms:9000/imageproxy/abc/image.jpg",
+        )
+
+    def test_tidal_cdn_is_allowed(self) -> None:
+        url = "https://resources.tidal.com/images/a/b/320x320.jpg"
+        self.assertEqual(self.resolve(url), url)
+
+    def test_absolute_lms_url_is_allowed(self) -> None:
+        url = "http://lms:9000/music/42/cover.jpg"
+        self.assertEqual(self.resolve(url), url)
+
+    def test_arbitrary_host_is_refused(self) -> None:
+        for ref in (
+            "http://169.254.169.254/latest/meta-data/",
+            "http://192.168.1.1/admin",
+            "https://evil.example.com/x.jpg",
+            "http://tidal.com.evil.example.com/x.jpg",
+        ):
+            with self.subTest(ref=ref), self.assertRaises(ValueError):
+                self.resolve(ref)
+
+    def test_traversal_and_odd_schemes_are_refused(self) -> None:
+        for ref in (
+            "../../etc/passwd",
+            "/imageproxy/../../etc/passwd",
+            "//evil.example.com/x.jpg",
+            "file:///etc/passwd",
+            "",
+            "   ",
+        ):
+            with self.subTest(ref=ref), self.assertRaises(ValueError):
+                self.resolve(ref)
+
+    def test_image_url_never_leaks_the_lms_address(self) -> None:
+        lms = LMS("lms", 9000)
+        for value in (
+            "/imageproxy/http%3A%2F%2Fresources.tidal.com%2Fa.jpg/image.jpg",
+            "http://resources.tidal.com/images/a/1280x1280.jpg",
+            "/music/42/cover.jpg",
+        ):
+            proxied = lms.image_url(value)
+            self.assertTrue(proxied.startswith("/art?p="), proxied)
+            self.assertNotIn("lms:9000", proxied)
+
+    def test_image_url_is_idempotent(self) -> None:
+        """describe() can hand back an already-proxied value from the store."""
+        lms = LMS("lms", 9000)
+        once = lms.image_url("/imageproxy/a.jpg")
+        self.assertEqual(lms.image_url(once), once)
+
+    def test_image_url_passes_none_through(self) -> None:
+        self.assertIsNone(LMS("lms", 9000).image_url(None))
+        self.assertIsNone(LMS("lms", 9000).image_url(""))
+
+    def test_proxied_reference_survives_the_round_trip(self) -> None:
+        """The percent-encoding in an imageproxy path must not be mangled."""
+        from urllib.parse import parse_qs, urlsplit as split
+        original = "/imageproxy/http%3A%2F%2Fresources.tidal.com%2Fa.jpg/image.jpg"
+        proxied = LMS("lms", 9000).image_url(original)
+        got = parse_qs(split(proxied).query)["p"][0]
+        self.assertEqual(got, original)
+        self.assertEqual(self.resolve(got), self.BASE + original)
 
 
 class RateLimitTests(unittest.TestCase):

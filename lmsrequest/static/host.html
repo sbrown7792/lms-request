@@ -66,6 +66,11 @@
   </div>
 
   <div class="card">
+    <h2>Deployment</h2>
+    <div id="diag"></div>
+  </div>
+
+  <div class="card">
     <h2>Activity</h2>
     <div id="bans"></div>
     <div class="scroll" id="activity"><div class="empty">No requests yet.</div></div>
@@ -156,6 +161,7 @@ async function submitToken(token, { quiet = false } = {}) {
   await loadPlaylists();
   refresh();
   loadActivity();
+  loadDiagnostics();
   return true;
 }
 
@@ -305,6 +311,53 @@ async function refresh() {
     });
   } catch (e) {
     $("sub").textContent = e.message;
+  }
+}
+
+// --- deployment diagnostics ---------------------------------------------
+
+// Behind a reverse proxy the join URL is the thing most likely to be wrong,
+// and it fails silently: the QR just points somewhere no phone can reach.
+async function loadDiagnostics() {
+  if (!unlocked) return;
+  let d;
+  try { d = await api("/api/host/diagnostics"); }
+  catch { return; }
+
+  const box = $("diag");
+  box.innerHTML = "";
+
+  const rows = [
+    ["Guests join at", d.join_url],
+    ["LMS", d.lms],
+    ["Your address, as seen", d.client_ip],
+    ["Trusting X-Forwarded-*", d.trust_forwarded_for ? "yes" : "no"],
+  ];
+  if (d.public_url_override) rows.push(["public_url override", d.public_url_override]);
+  rows.push(["Build", `${d.build.version} (${String(d.build.commit).slice(0, 7)})`]);
+
+  rows.forEach(([label, value]) => {
+    const el = document.createElement("div");
+    el.className = "row";
+    el.innerHTML = `<div class="meta"><div class="artist"></div><div class="title"></div></div>`;
+    el.querySelector(".artist").textContent = label;
+    el.querySelector(".title").textContent = value ?? "—";
+    box.appendChild(el);
+  });
+
+  d.hints.forEach((hint) => {
+    const el = document.createElement("p");
+    el.className = "note";
+    el.textContent = hint;
+    box.appendChild(el);
+  });
+
+  const seen = Object.entries(d.headers).filter(([, v]) => v);
+  if (seen.length) {
+    const el = document.createElement("p");
+    el.className = "sub";
+    el.textContent = "Headers: " + seen.map(([k, v]) => `${k}: ${v}`).join(" · ");
+    box.appendChild(el);
   }
 }
 
@@ -474,6 +527,7 @@ $("reset").onclick = async () => {
     await loadPlaylists();
     refresh();
     loadActivity();
+    loadDiagnostics();
   } catch (e) {
     if (!(e instanceof Locked)) toast(e.message, true);
   }

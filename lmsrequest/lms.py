@@ -9,10 +9,43 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from urllib.parse import quote, urlsplit
 
 import httpx
 
 log = logging.getLogger("lmsrequest.lms")
+
+# Where proxied artwork is served from. Clients only ever see this prefix.
+ART_PATH = "/art?p="
+
+# Album art is a few hundred KB; anything far larger is not artwork.
+MAX_ART_BYTES = 8 * 1024 * 1024
+
+
+def resolve_art_ref(ref: str, lms_base: str, lms_host: str) -> str:
+    """Turn an /art reference back into a URL the server may fetch.
+
+    Deliberately narrow. An image proxy that fetched whatever it was handed is
+    an SSRF hole: a guest could aim it at a router admin page or a cloud
+    metadata endpoint and read the response through it. Relative references
+    resolve against LMS; absolute ones must be on a host we expect artwork from.
+
+    Raises ValueError for anything else.
+    """
+    ref = (ref or "").strip()
+    if not ref or ".." in ref or any(c in ref for c in "\n\r\\"):
+        raise ValueError("bad artwork reference")
+
+    if ref.startswith(("http://", "https://")):
+        host = (urlsplit(ref).hostname or "").lower()
+        if host != lms_host.lower() and not host.endswith(".tidal.com"):
+            raise ValueError(f"artwork host not allowed: {host or '?'}")
+        return ref
+
+    # Protocol-relative ("//host/x") and other schemes are not artwork paths.
+    if ref.startswith("//") or ":" in ref.split("/")[0]:
+        raise ValueError("bad artwork reference")
+    return f"{lms_base.rstrip('/')}/{ref.lstrip('/')}"
 
 
 class LMSError(RuntimeError):
@@ -182,9 +215,39 @@ class LMS:
         ]
 
     def image_url(self, path: str | None) -> str | None:
-        """Turn an LMS-relative artwork path into something a browser can load."""
+        """Turn an LMS artwork reference into a URL on *this* server.
+
+        Never hand a client an LMS URL. Guests are typically on a network that
+        cannot reach LMS at all -- only this process can -- and behind TLS an
+        http:// LMS URL would be blocked as mixed content even if it could.
+
+        So the reference is passed to /art, which fetches it server-side. Two
+        shapes arrive from LMS: paths relative to the server ("/imageproxy/...",
+        "/music/<id>/cover.jpg") and occasionally absolute URLs on TIDAL's CDN.
+        Both are kept verbatim here and resolved when /art is called.
+        """
         if not path:
             return None
-        if path.startswith("http://") or path.startswith("https://"):
-            return path
-        return f"{self.base}/{path.lstrip('/')}"
+        if path.startswith(ART_PATH):
+            return path  # already proxied; keeps this idempotent
+        return ART_PATH + quote(path, safe="")
+
+    async def fetch_image(self, url: str) -> tuple[bytes, str]:
+        """Fetch one artwork image. Raises LMSError if it isn't usable."""
+        try:
+            # LMS's /imageproxy answers 301 and points at the real CDN URL, so
+            # redirects have to be followed. Safe here: the first hop is already
+            # restricted to LMS or TIDAL by the caller, and a server that could
+            # redirect us somewhere hostile is one we already trust for
+            # everything else.
+            resp = await self._client.get(url, timeout=15.0, follow_redirects=True)
+            resp.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise LMSError(f"artwork fetch failed: {exc}") from exc
+
+        content_type = resp.headers.get("content-type", "").split(";")[0].strip()
+        if not content_type.startswith("image/"):
+            raise LMSError(f"artwork was {content_type or 'untyped'}, not an image")
+        if len(resp.content) > MAX_ART_BYTES:
+            raise LMSError(f"artwork is {len(resp.content)} bytes, over the cap")
+        return resp.content, content_type

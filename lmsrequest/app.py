@@ -29,7 +29,7 @@ from fastapi import (
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .lms import LMS, LMSError, PlayerNotAllowed
+from .lms import LMS, LMSError, PlayerNotAllowed, resolve_art_ref
 from .party import Party, RequestRefused
 from .ratelimit import RateLimiter
 from .store import Store
@@ -190,6 +190,7 @@ class App:
             allowed_players=config.get("dev", {}).get("allowed_players", []),
         )
         self.tidal = Tidal(self.lms)
+        self.lms_host = str(config["lms"]["host"]).lower()
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.store = Store(DATA_DIR / "lmsrequest.db")
         limits = config.get("limits", {})
@@ -250,6 +251,13 @@ class App:
             samesite="lax",
         )
         return new
+
+    def resolve_art(self, ref: str) -> str:
+        """HTTP wrapper around resolve_art_ref."""
+        try:
+            return resolve_art_ref(ref, self.lms.base, self.lms_host)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     def client_ip(self, request: Request) -> str:
         """The address to log and to ban.
@@ -474,6 +482,33 @@ async def qr_code(request: Request):
     return Response(buf.getvalue(), media_type="image/svg+xml")
 
 
+@app.get("/art")
+async def art(p: str = Query(min_length=1, max_length=2048)):
+    """Serve artwork on this origin.
+
+    Guests generally have no route to LMS, and on an HTTPS deployment an
+    http:// LMS URL would be mixed content regardless. Everything is fetched
+    server-side and handed back from here.
+    """
+    url = state.resolve_art(p)
+    try:
+        content, content_type = await state.lms.fetch_image(url)
+    except LMSError as exc:
+        log.info("artwork unavailable (%s): %s", url, exc)
+        raise HTTPException(status_code=404, detail="artwork unavailable") from exc
+
+    return Response(
+        content,
+        media_type=content_type,
+        headers={
+            # Album art for a given track never changes, and the TV polls every
+            # few seconds -- let the browser hold on to it.
+            "Cache-Control": "public, max-age=86400",
+            "ETag": '"' + hashlib.sha256(content).hexdigest()[:32] + '"',
+        },
+    )
+
+
 @app.get("/healthz")
 async def healthz():
     """Liveness and build identity. Deliberately does not touch LMS."""
@@ -635,6 +670,50 @@ async def api_remove(index: int, _: bool = Depends(require_host)):
 async def api_toggle_requests(body: dict = Body(...), _: bool = Depends(require_host)):
     state.party.set_requests_open(bool(body.get("open", True)))
     return {"requests_open": state.party.requests_open}
+
+
+@app.get("/api/host/diagnostics")
+async def api_diagnostics(request: Request, _: bool = Depends(require_host)):
+    """What LMS Request thinks its own address is, and why.
+
+    Exists because getting this wrong behind a reverse proxy is the single most
+    common deployment problem: nginx defaults `proxy_set_header Host` to the
+    upstream address, so the QR code advertises an internal host that no guest
+    phone can reach.
+    """
+    trusted = bool(state.config["server"].get("trust_forwarded_for"))
+    headers = {
+        name: request.headers.get(name)
+        for name in ("host", "x-forwarded-host", "x-forwarded-proto", "x-forwarded-for")
+    }
+    join = state.join_url(request)
+
+    hints = []
+    if state.config["server"].get("public_url"):
+        hints.append("public_url is set, so it overrides everything below.")
+    elif not trusted and (headers["x-forwarded-host"] or headers["x-forwarded-proto"]):
+        hints.append(
+            "A proxy is sending X-Forwarded-* but trust_forwarded_for is off, so "
+            "they're being ignored. Set LMSREQUEST_TRUST_FORWARDED_FOR=true."
+        )
+    elif trusted and not headers["x-forwarded-host"] and not headers["x-forwarded-proto"]:
+        hints.append(
+            "trust_forwarded_for is on but no X-Forwarded-* headers arrived. "
+            "Check the proxy is sending them."
+        )
+    if join.startswith("http://") and headers["x-forwarded-proto"] == "https":
+        hints.append("The proxy terminates TLS but the join URL is http://.")
+
+    return {
+        "join_url": join,
+        "public_url_override": state.config["server"].get("public_url") or None,
+        "trust_forwarded_for": trusted,
+        "client_ip": state.client_ip(request),
+        "headers": headers,
+        "lms": state.lms.base,
+        "build": BUILD,
+        "hints": hints,
+    }
 
 
 @app.get("/api/host/activity")

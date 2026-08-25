@@ -16,7 +16,8 @@ playable on your server.
 - LMS with the [TIDAL plugin](https://github.com/michaelherger/lms-plugin-tidal)
   installed and logged in
 - Python 3.11+ (needs `tomllib`)
-- Guests on the same network as the machine running LMS Request
+- Guests able to reach LMS Request. They do *not* need any route to LMS itself —
+  artwork and search both go through this app.
 
 ## Quick start
 
@@ -175,9 +176,41 @@ That derivation is server-side, from the `Host` header, deliberately: a
 `/qr.svg` that encoded a string supplied by the page would be an open QR
 generator for arbitrary URLs on your own domain.
 
-Behind a reverse proxy, set `trust_forwarded_for = true` so the scheme and host
-come from `X-Forwarded-Proto` / `X-Forwarded-Host` — otherwise an HTTPS
-deployment advertises an `http://` link.
+### Behind a reverse proxy
+
+Set `LMSREQUEST_TRUST_FORWARDED_FOR=true` and have the proxy send the headers.
+The complete nginx location block:
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_http_version 1.1;
+
+    # nginx defaults Host to the *upstream* address. Left alone, the QR code
+    # and join link advertise an internal host no guest phone can reach.
+    proxy_set_header Host              $host;
+    proxy_set_header X-Forwarded-Host  $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    # Replace rather than append, so a client cannot inject a value: this is
+    # the address the ban list works on.
+    proxy_set_header X-Forwarded-For   $remote_addr;
+}
+```
+
+Without `X-Forwarded-Proto` an HTTPS deployment advertises an `http://` link,
+which then gets blocked as mixed content.
+
+The host console's **Deployment** card shows the address it derived, the client
+address it saw, whether forwarded headers are being trusted, and the headers
+that actually arrived — check there first if the QR points at the wrong place.
+`LMSREQUEST_PUBLIC_URL` overrides the lot if a proxy can't be persuaded.
+
+**Guests never need to reach LMS.** Artwork is fetched server-side and served
+from `/art` on this origin, so only the container needs a route to LMS. That
+also keeps everything same-origin under TLS. `/art` will only fetch from the
+configured LMS host or `*.tidal.com`; anything else is refused, so it can't be
+turned into an open proxy.
 
 Set `server.public_url` only when the screen showing the QR reaches LMS Request by a
 different route than guests' phones do, e.g. the TV is on the LAN but guests
