@@ -1,0 +1,43 @@
+services:
+  lms-request:
+    build: .
+    image: lms-request
+    container_name: lms-request
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      # Keeps the host session, bans, party name and request log across
+      # restarts. Losing it is not fatal, just annoying mid-party.
+      - lms-request-data:/data
+    environment:
+      LMSREQUEST_LMS_HOST: lms
+      LMSREQUEST_LMS_PORT: "9000"
+      # Leave unset and LMS Request mints one and logs it at startup.
+      # LMSREQUEST_HOST_TOKEN: pick-something
+      #
+      # Turn on when running behind a reverse proxy, so the join URL, QR code
+      # and the ban list's addresses come from X-Forwarded-Proto / -Host / -For
+      # instead of the proxy's own connection.
+      # LMSREQUEST_TRUST_FORWARDED_FOR: "true"
+      #
+      # Only if the QR needs a different address than the one the TV browser
+      # used to reach LMS Request.
+      # LMSREQUEST_PUBLIC_URL: https://requests.example.com
+      #
+      # Safety guard, off unless set: a comma-separated list of player ids that
+      # may receive commands. Everything else appears in the picker but is
+      # refused. Handy for a dry run before the party.
+      # LMSREQUEST_ALLOWED_PLAYERS: "b8:27:eb:db:80:2d,b8:27:eb:69:15:f0"
+    # Uncomment if 'lms' does not resolve inside the container.
+    # extra_hosts:
+    #   - "lms:192.168.250.250"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
+
+volumes:
+  lms-request-data:

@@ -1,0 +1,45 @@
+# Deployment on another host: pulls the published image instead of building.
+#
+#   scp docker-compose.deploy.yml .env  target:/opt/lms-request/
+#   ssh target 'cd /opt/lms-request && docker compose -f docker-compose.deploy.yml up -d'
+#
+# GHCR_OWNER must be set (see .env.example). Public images need no login; if the
+# package is private, log in on the target first:
+#   echo $GITHUB_TOKEN | docker login ghcr.io -u <user> --password-stdin
+
+services:
+  lms-request:
+    image: ghcr.io/${GHCR_OWNER:?set GHCR_OWNER in .env}/lms-request:${IMAGE_TAG:-latest}
+    container_name: lms-request
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-8080}:8080"
+    volumes:
+      # Holds the cookie-signing secret, ban list, player and playlist choices
+      # and the request log. Without it, every restart logs the host out.
+      - lms-request-data:/data
+    environment:
+      LMSREQUEST_LMS_HOST: ${LMS_HOST:-lms}
+      LMSREQUEST_LMS_PORT: ${LMS_PORT:-9000}
+      # Leave unset and a password is generated and printed to the log.
+      LMSREQUEST_HOST_TOKEN: ${HOST_TOKEN:-}
+      # Set true when behind a reverse proxy, so the join URL, the QR code and
+      # the ban list's addresses come from the X-Forwarded-* headers.
+      LMSREQUEST_TRUST_FORWARDED_FOR: ${TRUST_FORWARDED_FOR:-false}
+      LMSREQUEST_PUBLIC_URL: ${PUBLIC_URL:-}
+      # Comma-separated player ids allowed to receive commands. Empty means all
+      # of them; set it for a dry run so a test cannot start music in the wrong
+      # room.
+      LMSREQUEST_ALLOWED_PLAYERS: ${ALLOWED_PLAYERS:-}
+    # Uncomment if the LMS hostname does not resolve inside the container.
+    # extra_hosts:
+    #   - "lms:192.168.250.250"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
+
+volumes:
+  lms-request-data:

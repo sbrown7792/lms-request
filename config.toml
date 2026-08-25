@@ -1,0 +1,62 @@
+# LMS Request configuration
+
+[lms]
+host = "lms"
+port = 9000
+
+[server]
+bind = "0.0.0.0"
+port = 8080
+# Normally leave this empty: the join URL, the QR code and the manifest are all
+# derived from the address the browser used to load the page, so LMS Request works at
+# whatever hostname or sub-path you deploy it behind with no configuration.
+#
+# Set it only when the screen showing the QR reaches LMS Request by a different route
+# than guests' phones do -- e.g. the TV is on the LAN but guests come in over a
+# public hostname.
+public_url = ""
+
+# Take the client address from the X-Forwarded-For header instead of the socket.
+# Turn this ON only when LMS Request sits behind a reverse proxy you control: behind
+# one, every guest otherwise appears as the proxy's address, so the activity log
+# is useless and a ban would lock out the whole party. Exposed directly to the
+# network, leave it OFF -- the header is trivially forged, which would let a
+# guest dodge a ban or frame someone else's address.
+trust_forwarded_for = false
+
+[host]
+# Password for the host console at /host. Leave empty and one is generated on
+# first run and printed to the log. Change this.
+token = "change-me-before-the-party"
+
+[party]
+# Max search results shown to guests.
+search_limit = 30
+# How many upcoming tracks the guest and TV views show.
+up_next = 5
+
+[limits]
+# Token bucket per guest, keyed on their cookie.
+add_tokens = 5
+add_refill_seconds = 180
+# Refuse a guest more than this many requests still waiting in the queue.
+max_pending_per_guest = 3
+
+[dev]
+# SAFETY GUARD, off by default. While this list is non-empty, LMS Request
+# refuses to send any state-changing command to a player that is not listed.
+# Every player still appears in the host console's picker; only commands are
+# gated, and the console shows a banner saying so.
+#
+# Useful while developing, so a test run cannot start music in the wrong room.
+# Uncomment and list player ids (MAC addresses) to switch it on:
+#
+#   allowed_players = ["b8:27:eb:db:80:2d"]
+#
+# Or set it without editing this file, which is how the container does it:
+#
+#   LMSREQUEST_ALLOWED_PLAYERS=b8:27:eb:db:80:2d,b8:27:eb:69:15:f0
+#
+# For local development, put that line in a .env file (gitignored) and run.sh
+# will pick it up.
+allowed_players = []

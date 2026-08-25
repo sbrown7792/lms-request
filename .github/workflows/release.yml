@@ -1,0 +1,82 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]          # v0.1.0 -> :0.1.0, :0.1, :latest
+    branches: [root]      # default branch -> :edge
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: lms-request
+
+jobs:
+  test:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: test           # never publish an image whose tests failed
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build metadata
+        id: build
+        run: |
+          # GHCR requires a lowercase path; GitHub usernames need not be.
+          echo "path=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
+          # Strip the leading v so the reported version matches the image tag
+          # (v0.1.0 -> 0.1.0). Untagged builds off the default branch are 'edge'.
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=edge" >> "$GITHUB_OUTPUT"
+          fi
+          echo "built=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tags and labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.build.outputs.path }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/root' }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          # Target host is amd64. Add linux/arm64 here to also build for a
+          # Raspberry Pi -- it works, but the emulated pip install roughly
+          # doubles the job time.
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.build.outputs.version }}
+            COMMIT=${{ github.sha }}
+            BUILT=${{ steps.build.outputs.built }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        run: |
+          {
+            echo "### Published"
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

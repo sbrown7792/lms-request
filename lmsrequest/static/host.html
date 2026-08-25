@@ -1,0 +1,485 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="theme-color" content="#0b0b0f">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LMS Request — host</title>
+<link rel="icon" href="/static/icons/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/static/icons/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="bar">
+    <h1>LMS Request — host console</h1>
+    <p class="sub" id="sub">—</p>
+  </header>
+
+  <div class="card" id="guard" hidden>
+    <p class="note" id="guardText"></p>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h2>1. Player</h2>
+      <div class="scroll" id="players"><div class="empty">Loading…</div></div>
+    </div>
+
+    <div class="card">
+      <h2>2. Default playlist</h2>
+      <div class="search">
+        <input id="plFilter" type="text" placeholder="Filter your TIDAL playlists…" autocomplete="off">
+      </div>
+      <div class="scroll" id="playlists"><div class="empty">Pick a player first.</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>3. Party name</h2>
+    <div class="search">
+      <input id="partyName" type="text" maxlength="60"
+             placeholder="e.g. Steve&apos;s birthday" autocomplete="off">
+      <button id="saveName" class="ghost">Save</button>
+    </div>
+    <p class="sub">Guests see &ldquo;Playing at &lt;name&gt;&rdquo;. Leave blank to show nothing.</p>
+  </div>
+
+  <div class="card">
+    <h2>4. Start the party</h2>
+    <div class="actions">
+      <button id="load">Load playlist &amp; play</button>
+      <button id="toggle" class="ghost">Pause requests</button>
+      <button id="skip" class="ghost">Skip track</button>
+      <button id="reset" class="danger">Reset request history</button>
+    </div>
+    <p class="sub" style="margin-top:10px">
+      Guests join at <a id="join" href="/" target="_blank">…</a> — or show <a href="/tv" target="_blank">the TV view</a> with the QR code.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Queue</h2>
+    <div id="queue"><div class="empty">Nothing loaded.</div></div>
+  </div>
+
+  <div class="card">
+    <h2>Activity</h2>
+    <div id="bans"></div>
+    <div class="scroll" id="activity"><div class="empty">No requests yet.</div></div>
+    <p class="sub" id="ipNote" style="margin-top:10px"></p>
+  </div>
+</div>
+
+<div class="sheet center" id="login" hidden>
+  <div class="sheet-card">
+    <img class="art" src="/static/icons/icon-192.png" alt="">
+    <div class="sheet-q">Host console</div>
+    <div class="sheet-title">Enter the host password</div>
+    <div class="sheet-artist" id="loginError">&nbsp;</div>
+    <div class="search">
+      <input id="loginToken" type="password" placeholder="Password"
+             autocomplete="current-password" enterkeyhint="go">
+    </div>
+    <div class="sheet-actions">
+      <button id="loginGo">Unlock</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let toastTimer;
+let unlocked = false;
+
+function toast(msg, bad = false) {
+  const el = $("toast");
+  el.textContent = msg;
+  el.classList.toggle("bad", bad);
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 3600);
+}
+
+class Locked extends Error {}
+
+async function api(path, options = {}) {
+  const resp = await fetch(path, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (resp.status === 403) {
+    showLogin();
+    throw new Locked(data.detail || "host password required");
+  }
+  if (!resp.ok) throw new Error(data.error || data.detail || resp.statusText);
+  return data;
+}
+
+// --- login ---------------------------------------------------------------
+
+function showLogin(message) {
+  unlocked = false;
+  $("login").hidden = false;
+  $("login").classList.add("show");
+  $("loginError").innerHTML = message || "&nbsp;";
+  $("loginToken").focus();
+}
+
+function hideLogin() {
+  unlocked = true;
+  $("login").classList.remove("show");
+  setTimeout(() => { $("login").hidden = true; }, 200);
+}
+
+async function submitToken(token, { quiet = false } = {}) {
+  const resp = await fetch("/api/host/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token }),
+  });
+  if (!resp.ok) {
+    const data = await resp.json().catch(() => ({}));
+    const why = resp.status === 429
+      ? (data.detail || "Too many attempts.")
+      : "That password didn't work.";
+    if (!quiet) showLogin(why);
+    return false;
+  }
+  hideLogin();
+  await loadPlayers();
+  await loadPlaylists();
+  refresh();
+  loadActivity();
+  return true;
+}
+
+$("loginGo").onclick = () => submitToken($("loginToken").value);
+$("loginToken").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") submitToken($("loginToken").value);
+});
+
+let selectedPlayer = null;
+let selectedPlaylist = null;
+let allPlaylists = [];
+
+// --- players -------------------------------------------------------------
+
+async function loadPlayers() {
+  const data = await api("/api/host/players");
+  selectedPlayer = data.selected;
+  const locked = data.players.filter((p) => !p.allowed);
+  $("guard").hidden = locked.length === 0;
+  if (locked.length) {
+    $("guardText").textContent =
+      "Dev safety guard is on: only " +
+      data.players.filter((p) => p.allowed).map((p) => p.name).join(", ") +
+      " can receive commands. Clear dev.allowed_players in config.toml to unlock all players.";
+  }
+  const box = $("players");
+  box.innerHTML = "";
+  data.players.forEach((p) => {
+    const el = document.createElement("div");
+    el.className = "row tap" + (p.id === selectedPlayer ? " sel" : "");
+    const bits = [p.is_group ? "group" : p.model];
+    if (!p.connected) bits.push("offline");
+    if (!p.allowed) bits.push("blocked by dev guard");
+    el.innerHTML = `<div class="meta">
+        <div class="title"></div><div class="artist"></div>
+      </div>${p.allowed ? "" : '<span class="tag">locked</span>'}`;
+    el.querySelector(".title").textContent = p.name;
+    el.querySelector(".artist").textContent = bits.join(" · ");
+    el.onclick = async () => {
+      try {
+        await api("/api/host/player", { method: "POST", body: JSON.stringify({ id: p.id }) });
+        selectedPlayer = p.id;
+        toast("Player: " + p.name);
+        await loadPlayers();
+        await loadPlaylists();
+        refresh();
+      } catch (e) { toast(e.message, true); }
+    };
+    box.appendChild(el);
+  });
+}
+
+// --- playlists -----------------------------------------------------------
+
+function renderPlaylists() {
+  const filter = $("plFilter").value.trim().toLowerCase();
+  const shown = filter
+    ? allPlaylists.filter((p) => p.name.toLowerCase().includes(filter))
+    : allPlaylists;
+  const box = $("playlists");
+  box.innerHTML = "";
+  if (!shown.length) {
+    box.innerHTML = `<div class="empty">No playlist matches “${filter}”.</div>`;
+    return;
+  }
+  shown.slice(0, 200).forEach((p) => {
+    const el = document.createElement("div");
+    el.className = "row tap" + (p.name === selectedPlaylist ? " sel" : "");
+    const art = p.art ? `<img class="art" src="${p.art}" alt="" loading="lazy">` : `<div class="art"></div>`;
+    el.innerHTML = `${art}<div class="meta"><div class="title"></div></div>`;
+    el.querySelector(".title").textContent = p.name;
+    el.onclick = async () => {
+      try {
+        await api("/api/host/playlist", { method: "POST", body: JSON.stringify({ name: p.name }) });
+        selectedPlaylist = p.name;
+        toast("Default playlist: " + p.name);
+        renderPlaylists();
+        refresh();
+      } catch (e) { toast(e.message, true); }
+    };
+    box.appendChild(el);
+  });
+}
+
+async function loadPlaylists() {
+  if (!selectedPlayer) return;
+  $("playlists").innerHTML = `<div class="empty">Loading your TIDAL playlists…</div>`;
+  try {
+    const data = await api("/api/host/playlists");
+    allPlaylists = data.playlists;
+    selectedPlaylist = data.selected;
+    renderPlaylists();
+  } catch (e) {
+    $("playlists").innerHTML = `<div class="empty">${e.message}</div>`;
+  }
+}
+
+$("plFilter").addEventListener("input", renderPlaylists);
+
+// --- queue ---------------------------------------------------------------
+
+async function refresh() {
+  if (!unlocked) return;
+  try {
+    const data = await api("/api/host/queue");
+    const where = data.player_name || "no player";
+    const pl = data.playlist ? ` · ${data.playlist}` : "";
+    const state = data.requests_open ? "requests open" : "requests PAUSED";
+    const party = data.party_name ? `“${data.party_name}” · ` : "";
+    $("sub").textContent = `${party}${where}${pl} · ${data.total || 0} in queue · ${state}`;
+    if (document.activeElement !== $("partyName")) {
+      $("partyName").value = data.party_name || "";
+    }
+    $("toggle").textContent = data.requests_open ? "Pause requests" : "Resume requests";
+
+    const box = $("queue");
+    box.innerHTML = "";
+    const items = [];
+    if (data.now_playing) items.push({ ...data.now_playing, playing: true });
+    items.push(...data.up_next);
+    if (!items.length) { box.innerHTML = `<div class="empty">Nothing loaded.</div>`; return; }
+
+    items.forEach((t) => {
+      const el = document.createElement("div");
+      el.className = "row";
+      const art = t.art ? `<img class="art" src="${t.art}" alt="" loading="lazy">` : `<div class="art"></div>`;
+      el.innerHTML = `${art}
+        <div class="meta"><div class="title"></div><div class="artist"></div></div>
+        ${t.playing ? '<span class="tag req">now</span>' : ""}
+        ${t.requested ? '<span class="tag req">★ user request</span>' : ""}`;
+      el.querySelector(".title").textContent = t.title || "Unknown";
+      el.querySelector(".artist").textContent = t.artist || "";
+      if (!t.playing) {
+        const btn = document.createElement("button");
+        btn.className = "danger sm";
+        btn.textContent = "Remove";
+        btn.onclick = async () => {
+          try {
+            const r = await api("/api/host/queue/" + t.index, { method: "DELETE" });
+            toast("Removed " + r.removed);
+            refresh();
+          } catch (e) { toast(e.message, true); }
+        };
+        el.appendChild(btn);
+      }
+      box.appendChild(el);
+    });
+  } catch (e) {
+    $("sub").textContent = e.message;
+  }
+}
+
+// --- activity feed and bans ---------------------------------------------
+
+function when(epoch) {
+  const d = new Date(epoch * 1000);
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+async function loadActivity() {
+  if (!unlocked) return;
+  let data;
+  try { data = await api("/api/host/activity"); }
+  catch { return; }
+
+  const bans = $("bans");
+  bans.innerHTML = "";
+  if (data.bans.length) {
+    const head = document.createElement("div");
+    head.className = "sub";
+    head.style.marginBottom = "6px";
+    head.textContent = `Banned (${data.bans.length}):`;
+    bans.appendChild(head);
+    const pills = document.createElement("div");
+    pills.className = "pill-row";
+    pills.style.marginBottom = "12px";
+    data.bans.forEach((b) => {
+      const btn = document.createElement("button");
+      btn.className = "ghost sm";
+      btn.textContent = `${b.ip} — unban`;
+      btn.onclick = async () => {
+        try {
+          await api("/api/host/unban", { method: "POST", body: JSON.stringify({ ip: b.ip }) });
+          toast(`${b.ip} can request again.`);
+          loadActivity();
+        } catch (e) { toast(e.message, true); }
+      };
+      pills.appendChild(btn);
+    });
+    bans.appendChild(pills);
+  }
+
+  const box = $("activity");
+  box.innerHTML = "";
+  if (!data.requests.length) {
+    box.innerHTML = `<div class="empty">No requests yet.</div>`;
+    return;
+  }
+  data.requests.forEach((r) => {
+    const el = document.createElement("div");
+    el.className = "row";
+    el.innerHTML = `<div class="meta">
+        <div class="title"></div>
+        <div class="artist"></div>
+      </div>
+      <span class="tag"></span>`;
+    el.querySelector(".title").textContent = r.title || "(unknown)";
+    el.querySelector(".artist").textContent =
+      `${when(r.at)} · ${r.ip || "no address"} · guest ${r.guest.slice(0, 6)}` +
+      (r.artist ? ` · ${r.artist}` : "");
+    el.querySelector(".tag").textContent = r.state;
+
+    if (r.ip && !r.banned) {
+      const btn = document.createElement("button");
+      btn.className = "danger sm";
+      btn.textContent = "Ban IP";
+      btn.onclick = async () => {
+        if (!confirm(`Stop requests from ${r.ip}?\n\nTheir already-queued songs stay in the queue — remove those above if you want them gone.`)) return;
+        try {
+          await api("/api/host/ban", {
+            method: "POST",
+            body: JSON.stringify({ ip: r.ip, reason: `via activity: ${r.title}` }),
+          });
+          toast(`${r.ip} can no longer request.`);
+          loadActivity();
+        } catch (e) { toast(e.message, true); }
+      };
+      el.appendChild(btn);
+    } else if (r.banned) {
+      const tag = document.createElement("span");
+      tag.className = "tag";
+      tag.style.color = "var(--bad)";
+      tag.textContent = "banned";
+      el.appendChild(tag);
+    }
+    box.appendChild(el);
+  });
+
+  const addrs = new Set(data.requests.map((r) => r.ip).filter(Boolean));
+  $("ipNote").textContent = addrs.size === 1 && data.requests.length > 2
+    ? `Every request shows the same address (${[...addrs][0]}) — if LMS Request is behind a reverse proxy, set trust_forwarded_for in config.toml, or a ban will lock out everyone.`
+    : "";
+}
+
+// --- actions -------------------------------------------------------------
+
+$("load").onclick = async () => {
+  if (!selectedPlaylist) return toast("Pick a playlist first.", true);
+  const btn = $("load");
+  btn.disabled = true;
+  btn.textContent = "Loading…";
+  try {
+    const r = await api("/api/host/load", { method: "POST", body: JSON.stringify({ play: true }) });
+    toast(`Loaded ${r.tracks} tracks from ${r.playlist}.`);
+  } catch (e) { toast(e.message, true); }
+  btn.disabled = false;
+  btn.textContent = "Load playlist & play";
+  refresh();
+};
+
+async function saveName() {
+  try {
+    const r = await api("/api/host/party-name", {
+      method: "POST",
+      body: JSON.stringify({ name: $("partyName").value }),
+    });
+    toast(r.party_name ? `Guests will see “${r.party_name}”.` : "Party name cleared.");
+    refresh();
+  } catch (e) { toast(e.message, true); }
+}
+
+$("saveName").onclick = saveName;
+$("partyName").addEventListener("keydown", (e) => { if (e.key === "Enter") saveName(); });
+
+$("toggle").onclick = async () => {
+  const open = $("toggle").textContent.startsWith("Pause") ? false : true;
+  try {
+    await api("/api/host/requests", { method: "POST", body: JSON.stringify({ open }) });
+    refresh();
+  } catch (e) { toast(e.message, true); }
+};
+
+$("skip").onclick = async () => {
+  try { await api("/api/host/skip", { method: "POST" }); setTimeout(refresh, 700); }
+  catch (e) { toast(e.message, true); }
+};
+
+$("reset").onclick = async () => {
+  if (!confirm("Forget all request history and rate limits?")) return;
+  try { await api("/api/host/reset", { method: "POST" }); toast("Request history cleared."); refresh(); }
+  catch (e) { toast(e.message, true); }
+};
+
+(async () => {
+  try {
+    const join = await (await fetch("/api/join")).json();
+    $("join").textContent = join.url;
+    $("join").href = join.url;
+  } catch { /* the rest of the console still works */ }
+
+  // An older ?t=... bookmark still works: trade it for the cookie, then drop
+  // it from the address bar so the password stops sitting in browser history.
+  const fromUrl = new URLSearchParams(location.search).get("t");
+  if (fromUrl) {
+    history.replaceState(null, "", location.pathname);
+    if (await submitToken(fromUrl, { quiet: true })) {
+      setInterval(refresh, 6000);
+      setInterval(loadActivity, 6000);
+      return;
+    }
+  }
+
+  try {
+    await loadPlayers();          // 403 here pops the login sheet
+    unlocked = true;
+    await loadPlaylists();
+    refresh();
+    loadActivity();
+  } catch (e) {
+    if (!(e instanceof Locked)) toast(e.message, true);
+  }
+  setInterval(refresh, 6000);
+  setInterval(loadActivity, 6000);
+})();
+</script>
+</body>
+</html>

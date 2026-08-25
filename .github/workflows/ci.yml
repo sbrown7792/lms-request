@@ -1,0 +1,68 @@
+name: tests
+
+on:
+  push:
+    branches: [root]
+  pull_request:
+  workflow_call:          # so the release workflow can gate on this
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The tests import lmsrequest.party, which reaches lmsrequest.lms and so
+      # httpx -- the runtime deps are needed even though no LMS server is.
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # No LMS needed: the tests run against a fake server, which is the point
+      # of keeping the queue arithmetic pure.
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Front-end consistency
+        run: python scripts/check_static.py
+
+      - name: Config loads with no config file
+        env:
+          LMSREQUEST_CONFIG: /nonexistent.toml
+        run: |
+          python - <<'PY'
+          import lmsrequest.app as a
+          c = a.load_config()
+          assert c["lms"]["host"], "no LMS host default"
+          assert c["dev"]["allowed_players"] == [], "image must ship with no player guard"
+          print("defaults ok:", c["lms"], c["server"]["port"])
+          PY
+
+      # The committed config.toml having the guard switched on would leave
+      # anyone who clones this wondering why nothing plays.
+      - name: Committed config leaves the player guard off
+        run: |
+          python - <<'PY'
+          import tomllib
+          with open("config.toml", "rb") as fh:
+              players = tomllib.load(fh).get("dev", {}).get("allowed_players", [])
+          assert players == [], f"config.toml pins the player guard to {players}"
+          print("config.toml guard: off")
+          PY
+
+      - name: Player guard can still be set by environment
+        env:
+          LMSREQUEST_ALLOWED_PLAYERS: "aa:bb:cc:dd:ee:ff, 11:22:33:44:55:66"
+        run: |
+          python - <<'PY'
+          import lmsrequest.app as a
+          got = a.load_config()["dev"]["allowed_players"]
+          assert got == ["aa:bb:cc:dd:ee:ff", "11:22:33:44:55:66"], got
+          print("env override ok:", got)
+          PY
+
+      # scripts/probe.py talks to a real LMS, so it cannot run here. It is the
+      # deployment smoke test instead -- see the README.

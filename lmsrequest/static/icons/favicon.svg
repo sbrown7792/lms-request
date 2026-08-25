@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="LMS Request">
+  <title>LMS Request</title>
+  <defs>
+    <linearGradient id="bars" x1="0" y1="64" x2="64" y2="0">
+      <stop offset="0" stop-color="#4fd1c5"/>
+      <stop offset="1" stop-color="#8be9dd"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="15" fill="#0b0b0f"/>
+  <!-- Level meter: four bars read clearly even at 16px, where a music note
+       or a QR motif turns to mush. -->
+  <g fill="url(#bars)">
+    <rect x="11.25" y="32" width="7" height="18" rx="3.5"/>
+    <rect x="22.75" y="16" width="7" height="34" rx="3.5"/>
+    <rect x="34.25" y="24" width="7" height="26" rx="3.5"/>
+    <rect x="45.75" y="36" width="7" height="14" rx="3.5"/>
+  </g>
+</svg>

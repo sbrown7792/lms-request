@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="theme-color" content="#0b0b0f">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LMS Request</title>
+<link rel="icon" href="/static/icons/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/static/icons/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="tv">
+<!-- Two layers so artwork changes crossfade rather than snap. -->
+<div class="tv-bg" id="bgA"></div>
+<div class="tv-bg" id="bgB"></div>
+<div class="tv-scrim"></div>
+
+<div class="tv-grid">
+  <div class="tv-now">
+    <div class="row" style="border:0; gap:32px; padding:0">
+      <img class="art" id="art" alt="">
+      <div class="meta">
+        <div class="title" id="title">Nothing playing</div>
+        <div class="artist" id="artist"></div>
+        <div id="badge" style="margin-top:14px"></div>
+      </div>
+    </div>
+
+    <div class="progress" id="progress" hidden>
+      <div class="progress-track"><div class="progress-fill" id="fill"></div></div>
+      <div class="progress-times">
+        <span id="elapsed">0:00</span>
+        <span id="remaining">0:00</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card tv-join">
+    <div class="tv-join-inner">
+      <img src="/qr.svg" alt="QR code to request a song">
+      <div class="tv-join-text">
+        <div class="tv-join-lead">Request a song</div>
+        <div class="tv-join-sub">Scan with your phone camera</div>
+        <div class="tv-join-url" id="join"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card tv-next">
+    <h2>Coming up</h2>
+    <div id="next"><div class="empty">—</div></div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+// Wording matters here: a bare "request" pill reads as a control you could
+// press. Naming who it came from makes it unmistakably a label.
+const REQUEST_BADGE = '<span class="shout big"><span class="star">★</span> User request!</span>';
+const REQUEST_TAG = '<span class="shout"><span class="star">★</span> User request!</span>';
+
+function clock(seconds) {
+  if (!isFinite(seconds) || seconds < 0) seconds = 0;
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return m + ":" + String(s).padStart(2, "0");
+}
+
+// --- blurred artwork backdrop -------------------------------------------
+
+let bgFront = $("bgA");
+let bgShown = null;
+
+function setBackdrop(src) {
+  if (src === bgShown) return;
+  bgShown = src;
+  const back = bgFront === $("bgA") ? $("bgB") : $("bgA");
+  if (!src) {
+    $("bgA").classList.remove("on");
+    $("bgB").classList.remove("on");
+    return;
+  }
+  // Only crossfade once the image is decoded, so we never fade to blank.
+  const pre = new Image();
+  pre.onload = () => {
+    back.style.backgroundImage = `url("${src}")`;
+    back.classList.add("on");
+    bgFront.classList.remove("on");
+    bgFront = back;
+  };
+  pre.src = src;
+}
+
+// --- progress ------------------------------------------------------------
+
+// The server is polled every few seconds; between polls we advance off the
+// local clock so the bar moves smoothly instead of stepping.
+let track = { elapsed: 0, duration: 0, at: 0, playing: false };
+
+function paintProgress() {
+  if (!track.duration) { $("progress").hidden = true; return; }
+  $("progress").hidden = false;
+  const drift = track.playing ? (Date.now() - track.at) / 1000 : 0;
+  const now = Math.min(track.elapsed + drift, track.duration);
+  $("fill").style.width = (now / track.duration) * 100 + "%";
+  $("elapsed").textContent = clock(now);
+  $("remaining").textContent = "-" + clock(track.duration - now);
+}
+
+// --- polling -------------------------------------------------------------
+
+function setArt(el, src) {
+  if (src) { el.src = src; el.style.visibility = "visible"; }
+  else { el.removeAttribute("src"); el.style.visibility = "hidden"; }
+}
+
+async function refresh() {
+  try {
+    const d = await (await fetch("/api/status")).json();
+    const now = d.now_playing;
+
+    $("title").textContent = now ? (now.title || "Unknown") : "Nothing playing";
+    $("artist").textContent = now ? (now.artist || "") : "";
+    $("badge").innerHTML = now && now.requested ? REQUEST_BADGE : "";
+    setArt($("art"), now && now.art);
+    setBackdrop((now && now.art) || null);
+
+    track = {
+      elapsed: d.elapsed || 0,
+      duration: d.duration || 0,
+      at: Date.now(),
+      playing: d.mode === "play",
+    };
+    paintProgress();
+
+    const box = $("next");
+    box.innerHTML = "";
+    if (!d.up_next.length) { box.innerHTML = '<div class="empty">—</div>'; return; }
+    d.up_next.forEach((t) => {
+      const el = document.createElement("div");
+      el.className = "row";
+      el.innerHTML = `<div class="meta"><div class="title"></div><div class="artist"></div></div>
+        ${t.requested ? REQUEST_TAG : ""}`;
+      el.querySelector(".title").textContent = t.title || "Unknown";
+      el.querySelector(".artist").textContent = t.artist || "";
+      box.appendChild(el);
+    });
+  } catch { /* keep the last frame on screen */ }
+}
+
+(async () => {
+  try {
+    const j = await (await fetch("/api/join")).json();
+    $("join").textContent = j.url.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  } catch { /* the QR still works */ }
+  refresh();
+  setInterval(refresh, 5000);
+  setInterval(paintProgress, 250);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0b0f">
+<title>Request a song</title>
+<link rel="icon" href="/static/icons/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/static/icons/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="bar">
+    <h1>Request a song</h1>
+    <p class="sub" id="sub">Search, tap, and it plays next.</p>
+    <div class="search">
+      <input id="q" type="search" placeholder="Song or artist…"
+             autocomplete="off" autocapitalize="none" enterkeyhint="search">
+    </div>
+  </header>
+
+  <div id="results"></div>
+
+  <div class="card" id="nowCard" hidden>
+    <h2>Playing now</h2>
+    <div id="now"></div>
+  </div>
+
+  <div class="card" id="nextCard" hidden>
+    <h2>Coming up</h2>
+    <div id="next"></div>
+  </div>
+</div>
+
+<div class="sheet" id="sheet" hidden>
+  <div class="sheet-card">
+    <img class="art" id="sheetArt" alt="">
+    <div class="sheet-q">Request this song?</div>
+    <div class="sheet-title" id="sheetTitle"></div>
+    <div class="sheet-artist" id="sheetArtist"></div>
+    <div class="sheet-actions">
+      <button class="ghost" id="sheetNo">Cancel</button>
+      <button id="sheetYes">Request it</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let toastTimer;
+
+function toast(msg, bad = false) {
+  const el = $("toast");
+  el.textContent = msg;
+  el.classList.toggle("bad", bad);
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 3400);
+}
+
+function row(track, opts = {}) {
+  const el = document.createElement("div");
+  el.className = "row" + (opts.tap ? " tap" : "") + (track.queued ? " done" : "");
+  const art = track.art
+    ? `<img class="art" src="${track.art}" alt="" loading="lazy">`
+    : `<div class="art"></div>`;
+  const tag = track.queued
+    ? `<span class="tag">queued</span>`
+    : track.requested
+      ? `<span class="tag req">★ requested</span>`
+      : "";
+  el.innerHTML = `${art}
+    <div class="meta">
+      <div class="title"></div>
+      <div class="artist"></div>
+    </div>${tag}`;
+  el.querySelector(".title").textContent = track.title || "Unknown";
+  el.querySelector(".artist").textContent = track.artist || "";
+  if (opts.tap && !track.queued) {
+    el.onclick = async () => {
+      if (await confirmRequest(track)) send(track, el);
+    };
+  }
+  return el;
+}
+
+// Resolves true if the guest confirms. Guards against a mis-tap while
+// scrolling a list of results on a phone.
+let closeSheet = null;
+
+function confirmRequest(track) {
+  return new Promise((resolve) => {
+    const sheet = $("sheet");
+    $("sheetTitle").textContent = track.title || "Unknown";
+    $("sheetArtist").textContent = track.artist || "";
+    const art = $("sheetArt");
+    if (track.art) { art.src = track.art; art.hidden = false; }
+    else { art.removeAttribute("src"); art.hidden = true; }
+
+    sheet.hidden = false;
+    requestAnimationFrame(() => sheet.classList.add("show"));
+
+    const finish = (answer) => {
+      if (!closeSheet) return;
+      closeSheet = null;
+      sheet.classList.remove("show");
+      setTimeout(() => { sheet.hidden = true; }, 180);
+      document.removeEventListener("keydown", onKey);
+      resolve(answer);
+    };
+    closeSheet = finish;
+
+    const onKey = (e) => {
+      if (e.key === "Escape") finish(false);
+      if (e.key === "Enter") finish(true);
+    };
+    document.addEventListener("keydown", onKey);
+
+    $("sheetYes").onclick = () => finish(true);
+    $("sheetNo").onclick = () => finish(false);
+    // Tapping the dimmed area behind the card cancels.
+    sheet.onclick = (e) => { if (e.target === sheet) finish(false); };
+  });
+}
+
+async function send(track, el) {
+  el.classList.add("done");
+  try {
+    const resp = await fetch("/api/request", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(track),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      el.classList.remove("done");
+      toast(data.error || "Could not add that one.", true);
+      return;
+    }
+    const where = data.position === 1 ? "up next" : `#${data.position} in the queue`;
+    toast(`Added — ${where}.`);
+    refresh();
+  } catch {
+    el.classList.remove("done");
+    toast("Lost the connection. Try again.", true);
+  }
+}
+
+let searchSeq = 0;
+async function search(q) {
+  const mine = ++searchSeq;
+  const box = $("results");
+  if (q.length < 2) { box.innerHTML = ""; return; }
+  try {
+    const resp = await fetch("/api/search?q=" + encodeURIComponent(q));
+    const data = await resp.json();
+    if (mine !== searchSeq) return;  // a newer keystroke already won
+    if (!resp.ok) { box.innerHTML = `<div class="empty">${data.error || "Search failed."}</div>`; return; }
+    if (!data.results.length) { box.innerHTML = `<div class="empty">Nothing found for “${q}”.</div>`; return; }
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = "<h2>Results</h2>";
+    data.results.forEach((t) => card.appendChild(row(t, { tap: true })));
+    box.innerHTML = "";
+    box.appendChild(card);
+  } catch {
+    if (mine === searchSeq) box.innerHTML = `<div class="empty">Search failed.</div>`;
+  }
+}
+
+let debounce;
+$("q").addEventListener("input", (e) => {
+  clearTimeout(debounce);
+  const q = e.target.value.trim();
+  debounce = setTimeout(() => search(q), 260);
+});
+
+async function refresh() {
+  try {
+    const data = await (await fetch("/api/status")).json();
+    // Guests get the party's name, never the player's -- "Satellite_Right"
+    // means nothing to them.
+    if (!data.requests_open) $("sub").textContent = "Requests are paused right now.";
+    else if (data.party_name) $("sub").textContent = "Playing at " + data.party_name;
+    else $("sub").textContent = "Search, tap, and it plays next.";
+
+    if (data.party_name) document.title = data.party_name + " — request a song";
+
+    $("nowCard").hidden = !data.now_playing;
+    if (data.now_playing) {
+      $("now").innerHTML = "";
+      $("now").appendChild(row(data.now_playing));
+    }
+    $("nextCard").hidden = !data.up_next.length;
+    $("next").innerHTML = "";
+    data.up_next.forEach((t) => $("next").appendChild(row(t)));
+  } catch { /* the party matters more than this poll */ }
+}
+
+refresh();
+setInterval(refresh, 8000);
+</script>
+</body>
+</html>
