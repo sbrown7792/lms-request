@@ -146,6 +146,11 @@ docker compose exec lms-request python scripts/probe.py
    with the QR code and a short upcoming list below. That list is deliberately
    short (`party.up_next`, default 5): showing the next ten kills the suspense.
 
+   The page keeps the screen awake by itself, so there's no display timeout to
+   disable first. It asks for a screen wake lock, and falls back to looping a
+   1.5 KB silent video when that isn't available -- which includes any plain
+   `http://` LAN address, since the Wake Lock API needs a secure context.
+
 Guests land on `/`. That's the only page they need.
 
 ## Configuration

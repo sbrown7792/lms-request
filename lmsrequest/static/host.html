@@ -31,7 +31,10 @@
     <div class="card">
       <h2>2. Default playlist</h2>
       <div class="search">
-        <input id="plFilter" type="text" placeholder="Filter your TIDAL playlists…" autocomplete="off">
+        <input id="plFilter" type="text" placeholder="Filter your TIDAL playlists…"
+               name="lmsr-playlist-filter" autocomplete="off" spellcheck="false"
+               data-1p-ignore data-lpignore="true" data-bwignore
+               data-form-type="other">
       </div>
       <div class="scroll" id="playlists"><div class="empty">Pick a player first.</div></div>
     </div>
@@ -40,8 +43,14 @@
   <div class="card">
     <h2>3. Party name</h2>
     <div class="search">
+      <!-- The vendor data-* flags are the only thing that actually works:
+           password managers ignore autocomplete="off" and will offer to fill
+           any text field on a page that contains a password input. -->
       <input id="partyName" type="text" maxlength="60"
-             placeholder="e.g. Steve&apos;s birthday" autocomplete="off">
+             placeholder="e.g. Steve&apos;s birthday"
+             name="lmsr-party-label" autocomplete="off" spellcheck="false"
+             data-1p-ignore data-lpignore="true" data-bwignore
+             data-form-type="other">
       <button id="saveName" class="ghost">Save</button>
     </div>
     <p class="sub">Guests see &ldquo;Playing at &lt;name&gt;&rdquo;. Leave blank to show nothing.</p>
@@ -84,12 +93,12 @@
     <div class="sheet-q">Host console</div>
     <div class="sheet-title">Enter the host password</div>
     <div class="sheet-artist" id="loginError">&nbsp;</div>
-    <div class="search">
-      <input id="loginToken" type="password" placeholder="Password"
+    <form class="search" id="loginForm" autocomplete="on">
+      <input id="loginToken" type="password" name="password" placeholder="Password"
              autocomplete="current-password" enterkeyhint="go">
-    </div>
+    </form>
     <div class="sheet-actions">
-      <button id="loginGo">Unlock</button>
+      <button id="loginGo" type="button">Unlock</button>
     </div>
   </div>
 </div>
@@ -165,6 +174,7 @@ async function submitToken(token, { quiet = false } = {}) {
   return true;
 }
 
+$("loginForm").addEventListener("submit", (e) => e.preventDefault());
 $("loginGo").onclick = () => submitToken($("loginToken").value);
 $("loginToken").addEventListener("keydown", (e) => {
   if (e.key === "Enter") submitToken($("loginToken").value);

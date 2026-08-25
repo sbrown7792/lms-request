@@ -54,6 +54,19 @@
   </div>
 </div>
 
+<!-- Fallback for keeping the screen awake, used only when the Wake Lock API is
+     unavailable -- which includes any plain-http LAN address, since that is not
+     a secure context. A looping muted video inhibits the screensaver on
+     everything that plays video, which is every device this page targets.
+     awake.mp4 is 1.5 KB of black frames, regenerate with:
+       ffmpeg -f lavfi -i color=c=black:s=64x64:r=1 -t 4 -an -c:v libx264 \
+         -pix_fmt yuv420p -profile:v baseline -level 3.0 -crf 51 \
+         -movflags +faststart lmsrequest/static/awake.mp4 -->
+<video id="awake" src="/static/awake.mp4" muted loop playsinline preload="auto"
+       disableremoteplayback aria-hidden="true" tabindex="-1"
+       style="position:fixed; width:1px; height:1px; bottom:0; right:0;
+              opacity:0; pointer-events:none"></video>
+
 <script>
 const $ = (id) => document.getElementById(id);
 // Wording matters here: a bare "request" pill reads as a control you could
@@ -150,14 +163,49 @@ async function refresh() {
   } catch { /* keep the last frame on screen */ }
 }
 
+// --- keep the screen on --------------------------------------------------
+// This page is meant to sit on a TV all night, so a screensaver or display
+// timeout would blank the very thing it exists to show.
+
+let wakeLock = null;
+
+async function keepAwake() {
+  if (wakeLock) return;
+  if ("wakeLock" in navigator) {
+    try {
+      wakeLock = await navigator.wakeLock.request("screen");
+      // The browser drops the lock whenever the page is hidden, so watch for
+      // that rather than assuming one request lasts the evening.
+      wakeLock.addEventListener("release", () => { wakeLock = null; });
+      return;
+    } catch { /* not a secure context, unsupported, or refused */ }
+  }
+  const v = $("awake");
+  if (!v.paused) return;
+  // Muted autoplay needs no gesture, but a browser that refuses anyway will
+  // start on the first interaction instead.
+  v.play().catch(() => {
+    const once = { once: true };
+    ["pointerdown", "keydown"].forEach((e) =>
+      document.addEventListener(e, () => v.play().catch(() => {}), once));
+  });
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") keepAwake();
+});
+
 (async () => {
   try {
     const j = await (await fetch("/api/join")).json();
     $("join").textContent = j.url.replace(/^https?:\/\//, "").replace(/\/$/, "");
   } catch { /* the QR still works */ }
+  keepAwake();
   refresh();
   setInterval(refresh, 5000);
   setInterval(paintProgress, 250);
+  // Cheap belt and braces: re-arm if the lock was dropped or the video paused.
+  setInterval(keepAwake, 30000);
 })();
 </script>
 </body>
