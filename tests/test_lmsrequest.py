@@ -5,7 +5,7 @@ stdlib unittest, no extra dependencies:
     .venv/bin/python -m unittest discover -s tests -v
 
 The live end-to-end path is covered by scripts/probe.py plus the checks in
-README.md; these cover the arithmetic and the state machine.
+CONTRIBUTING.md; these cover the arithmetic and the state machine.
 """
 
 from __future__ import annotations

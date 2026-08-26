@@ -66,4 +66,4 @@ jobs:
           PY
 
       # scripts/probe.py talks to a real LMS, so it cannot run here. It is the
-      # deployment smoke test instead -- see the README.
+      # deployment smoke test instead -- see the README's Quick start.
