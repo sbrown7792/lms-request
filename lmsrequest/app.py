@@ -581,10 +581,10 @@ async def api_search(request: Request, q: str = Query(min_length=2, max_length=1
     player = state.party.require_player()
     limit = state.config["party"].get("search_limit", 30)
     results = await search_everywhere(state.tidal, state.lms, player, q.strip(), limit)
-    pending = state.store.pending_urls()
     for track in results:
-        # Grey these out in the UI rather than letting the tap fail.
-        track["queued"] = state.store.requested_ever(track["url"]) or track["url"] in pending
+        # Grey these out in the UI rather than letting the tap fail. Same
+        # verdict the request itself uses, so the two can't disagree.
+        track["queued"] = state.party.blocked(track["url"]) is not None
     return {"query": q, "results": results}
 
 
@@ -670,6 +670,12 @@ async def api_remove(index: int, _: bool = Depends(require_host)):
 async def api_toggle_requests(body: dict = Body(...), _: bool = Depends(require_host)):
     state.party.set_requests_open(bool(body.get("open", True)))
     return {"requests_open": state.party.requests_open}
+
+
+@app.post("/api/host/repeats")
+async def api_toggle_repeats(body: dict = Body(...), _: bool = Depends(require_host)):
+    state.party.set_allow_repeats(bool(body.get("allow", False)))
+    return {"allow_repeats": state.party.allow_repeats}
 
 
 @app.get("/api/host/diagnostics")

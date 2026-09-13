@@ -123,17 +123,25 @@ class Store:
         ).fetchone()
         return int(row["n"])
 
-    def requested_ever(self, url: str) -> bool:
-        """Should we refuse this track as already-asked-for?
+    def request_state(self, url: str) -> str | None:
+        """The state that speaks for this track tonight, or None if it's free.
 
-        A host veto counts -- the whole point of vetoing is that it does not
-        come straight back. A retired request does not.
+        Whether each state actually blocks a fresh request is the party's
+        decision, not the store's -- see Party.blocked(). Retired rows never
+        speak: a playlist reload invalidated them.
+
+        A song can hold several rows once repeats are allowed, so they're
+        ranked rather than taken in id order: a veto outranks everything (the
+        whole point of vetoing is that it doesn't come straight back), and a
+        copy still waiting outranks one that has already played.
         """
         row = self.db.execute(
-            "SELECT 1 FROM requests WHERE url = ? AND state != 'retired' LIMIT 1",
+            "SELECT state FROM requests WHERE url = ? AND state != 'retired' "
+            "ORDER BY CASE state WHEN 'vetoed' THEN 0 WHEN 'pending' THEN 1 "
+            "ELSE 2 END LIMIT 1",
             (url,),
         ).fetchone()
-        return row is not None
+        return row["state"] if row else None
 
     def requester_of(self, url: str) -> sqlite3.Row | None:
         return self.db.execute(

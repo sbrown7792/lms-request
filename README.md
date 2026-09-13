@@ -36,8 +36,9 @@ playable on your server.
   volume. Requesting is the only verb they have.
 - **Host veto that sticks.** Remove a request and it can't be re-requested.
 - **Party etiquette, enforced gently.** Each guest gets a few requests that
-  refill over time, a cap on how many can be queued at once, and no
-  re-requesting the same song or the one already playing.
+  refill over time, a cap on how many can be queued at once, and one play per
+  song — flip **Allow re-requests** on when you'd rather let a favourite come
+  round again.
 - **A live activity feed** with the address behind each request, and a one-click
   ban if someone is being a nuisance.
 - **Guests never need a route to LMS.** Album art is fetched by the server and
@@ -131,6 +132,13 @@ The host console's **Queue** card removes and skips. The **Activity** card is a
 live feed of every request with the time, the client address, a short guest id,
 and its state; each row has a **Ban IP** button, and banned addresses appear as
 pills you can un-ban.
+
+**Allow re-requests** decides whether a song that has already played can be
+asked for again. It's off by default — one play each keeps things moving — and
+the switch is there so you don't have to wipe the whole request history just to
+let one song round again. Songs still waiting in the queue can't be requested
+twice either way, and a song you removed stays removed: a veto is a deliberate
+"not tonight", not the one-play rule.
 
 A ban blocks searching as well as requesting, and survives *Reset request
 history* — a ban is a deliberate act and shouldn't quietly lapse. It does not

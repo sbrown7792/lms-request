@@ -99,6 +99,16 @@ class Party:
     def requests_open(self) -> bool:
         return bool(self.store.get("requests_open", True))
 
+    @property
+    def allow_repeats(self) -> bool:
+        """May a guest ask for a song that has already played tonight?
+
+        Off by default: one play each keeps a party moving and stops three
+        people queueing the same song. On, the host no longer has to clear the
+        whole request history just to let one song come round again.
+        """
+        return bool(self.store.get("allow_repeats", False))
+
     def set_player(self, player_id: str, name: str) -> None:
         self.store.set("player_id", player_id)
         self.store.set("player_name", name)
@@ -111,6 +121,28 @@ class Party:
 
     def set_requests_open(self, open_: bool) -> None:
         self.store.set("requests_open", bool(open_))
+
+    def set_allow_repeats(self, allow: bool) -> None:
+        self.store.set("allow_repeats", bool(allow))
+
+    def blocked(self, url: str, title: str = "") -> tuple[str, str] | None:
+        """Why this track can't be requested right now, as (code, message).
+
+        Lives here rather than in request() because the guest UI greys out
+        tracks using the same verdict -- a refusal a guest can see coming beats
+        one that arrives after the tap.
+        """
+        name = title or "That song"
+        state = self.store.request_state(url)
+        if state == "vetoed":
+            # A veto sticks whatever the repeat setting says: it was a
+            # deliberate "not tonight", not an accident of the one-play rule.
+            return "vetoed", f"The host has taken {name} off the list."
+        if state == "pending":
+            return "duplicate", f"{name} is already on the list."
+        if state == "played" and not self.allow_repeats:
+            return "played", f"{name} has already played tonight."
+        return None
 
     def ensure_not_banned(self, ip: str) -> None:
         if self.store.is_banned(ip):
@@ -228,11 +260,9 @@ class Party:
         if not url:
             raise RequestRefused("That track has no playable URL.", "bad_track")
 
-        if self.store.requested_ever(url):
-            raise RequestRefused(
-                f"{track.get('title') or 'That song'} is already on the list.",
-                "duplicate",
-            )
+        block = self.blocked(url, track.get("title") or "")
+        if block:
+            raise RequestRefused(block[1], block[0])
 
         mine = self.store.pending_count_for(guest_id)
         if mine >= self.max_pending_per_guest:
@@ -313,6 +343,7 @@ class Party:
                 "party_name": self.party_name,
                 "playlist": self.playlist_name,
                 "requests_open": self.requests_open,
+                "allow_repeats": self.allow_repeats,
                 "now_playing": None,
                 "up_next": [],
             }
@@ -352,6 +383,7 @@ class Party:
             "party_name": self.party_name,
             "playlist": self.playlist_name,
             "requests_open": self.requests_open,
+            "allow_repeats": self.allow_repeats,
             "mode": result.get("mode"),
             "total": int(result.get("playlist_tracks") or len(entries)),
             # Seconds elapsed and track length, for the TV progress bar. The

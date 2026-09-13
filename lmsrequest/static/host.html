@@ -64,7 +64,18 @@
       <button id="skip" class="ghost">Skip track</button>
       <button id="reset" class="danger">Reset request history</button>
     </div>
-    <p class="sub" style="margin-top:10px">
+
+    <label class="switch">
+      <input type="checkbox" id="repeats">
+      <span class="switch-track"><span class="switch-knob"></span></span>
+      <span class="switch-text">
+        Allow re-requests
+        <span class="sub">Let guests ask again for a song that has already
+        played tonight. Songs you remove from the queue stay blocked either
+        way.</span>
+      </span>
+    </label>
+    <p class="sub" style="margin-top:16px">
       Guests join at <a id="join" href="/" target="_blank">…</a> — or show <a href="/tv" target="_blank">the TV view</a> with the QR code.
     </p>
   </div>
@@ -279,13 +290,17 @@ async function refresh() {
     const data = await api("/api/host/queue");
     const where = data.player_name || "no player";
     const pl = data.playlist ? ` · ${data.playlist}` : "";
-    const state = data.requests_open ? "requests open" : "requests PAUSED";
+    const state = (data.requests_open ? "requests open" : "requests PAUSED")
+      + (data.allow_repeats ? " · repeats on" : "");
     const party = data.party_name ? `“${data.party_name}” · ` : "";
     $("sub").textContent = `${party}${where}${pl} · ${data.total || 0} in queue · ${state}`;
     if (document.activeElement !== $("partyName")) {
       $("partyName").value = data.party_name || "";
     }
     $("toggle").textContent = data.requests_open ? "Pause requests" : "Resume requests";
+    // Don't yank the switch back mid-flight: a poll landing between the click
+    // and its response would flip it the wrong way for a moment.
+    if (!repeatsInFlight) $("repeats").checked = !!data.allow_repeats;
 
     const box = $("queue");
     box.innerHTML = "";
@@ -500,6 +515,28 @@ $("toggle").onclick = async () => {
     refresh();
   } catch (e) { toast(e.message, true); }
 };
+
+let repeatsInFlight = false;
+
+$("repeats").addEventListener("change", async () => {
+  const allow = $("repeats").checked;
+  repeatsInFlight = true;
+  try {
+    const r = await api("/api/host/repeats", {
+      method: "POST",
+      body: JSON.stringify({ allow }),
+    });
+    toast(r.allow_repeats
+      ? "Guests can ask again for songs that have played."
+      : "Back to one request per song.");
+  } catch (e) {
+    $("repeats").checked = !allow;   // the server said no; show what's true
+    toast(e.message, true);
+  } finally {
+    repeatsInFlight = false;
+  }
+  refresh();
+});
 
 $("skip").onclick = async () => {
   try { await api("/api/host/skip", { method: "POST" }); setTimeout(refresh, 700); }

@@ -89,9 +89,15 @@ fetches them. `/art` only fetches from the configured LMS host or `*.tidal.com`
   id re-resolved at load time.
 - LMS `/imageproxy` answers `301`, so the artwork fetch needs
   `follow_redirects=True`. Without it every image 404s.
-- Request state is three-way, not two: `vetoed` blocks re-requesting (a veto is
-  meant to stick) while `retired` — set when the playlist is reloaded — does
-  not.
+- Request rows carry four states and each means something different:
+  `pending` and `vetoed` always block a fresh request, `played` blocks only
+  while the host's re-request switch is off, and `retired` — set when the
+  playlist is reloaded — never blocks. `Party.blocked()` is the single place
+  that decides; the guest UI greys tracks out with the same verdict, so a
+  refusal can't arrive as a surprise after the tap.
+- A song can hold several request rows once repeats are allowed, so
+  `Store.request_state()` ranks them rather than taking the newest: veto beats
+  waiting beats played.
 
 ## Front-end gotchas found the hard way
 
@@ -136,6 +142,8 @@ at whatever address guests used.
   reading; everything else lives behind `/api/host/*`.
 - **Guests never need a route to LMS.** Anything client-visible that points at
   the LMS host is a bug.
+- **A veto sticks.** Allowing re-requests loosens the one-play rule, not the
+  host's removals.
 - **The player name isn't public.** Guests see the party name; which speaker the
   sound comes out of isn't in the public response.
 - **The committed `config.toml` ships with the player guard off,** or everyone

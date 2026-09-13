@@ -211,20 +211,34 @@ class StoreStateTests(unittest.TestCase):
     def setUp(self) -> None:
         self.store = temp_store()
 
-    def test_veto_blocks_a_repeat_request(self) -> None:
+    def test_veto_is_the_state_that_speaks(self) -> None:
         self.store.add_request("tidal://1.flc", "Song", "Band", None, "g1")
         self.store.mark("tidal://1.flc", "vetoed")
-        self.assertTrue(self.store.requested_ever("tidal://1.flc"))
+        self.assertEqual(self.store.request_state("tidal://1.flc"), "vetoed")
 
     def test_retired_request_may_be_asked_for_again(self) -> None:
         self.store.add_request("tidal://1.flc", "Song", "Band", None, "g1")
         self.store.mark("tidal://1.flc", "retired")
-        self.assertFalse(self.store.requested_ever("tidal://1.flc"))
+        self.assertIsNone(self.store.request_state("tidal://1.flc"))
 
     def test_played_still_counts_as_requested(self) -> None:
         self.store.add_request("tidal://1.flc", "Song", "Band", None, "g1")
         self.store.mark("tidal://1.flc", "played")
-        self.assertTrue(self.store.requested_ever("tidal://1.flc"))
+        self.assertEqual(self.store.request_state("tidal://1.flc"), "played")
+
+    def test_a_veto_outranks_an_earlier_play(self) -> None:
+        """Several rows per song is normal once repeats are allowed."""
+        self.store.add_request("tidal://1.flc", "Song", "Band", None, "g1")
+        self.store.mark("tidal://1.flc", "played")
+        self.store.add_request("tidal://1.flc", "Song", "Band", None, "g2")
+        self.store.mark("tidal://1.flc", "vetoed")
+        self.assertEqual(self.store.request_state("tidal://1.flc"), "vetoed")
+
+    def test_a_waiting_copy_outranks_a_played_one(self) -> None:
+        self.store.add_request("tidal://1.flc", "Song", "Band", None, "g1")
+        self.store.mark("tidal://1.flc", "played")
+        self.store.add_request("tidal://1.flc", "Song", "Band", None, "g2")
+        self.assertEqual(self.store.request_state("tidal://1.flc"), "pending")
 
     def test_pending_is_per_guest(self) -> None:
         self.store.add_request("tidal://1.flc", "A", "", None, "g1")
@@ -463,7 +477,7 @@ class InjectionTests(unittest.IsolatedAsyncioTestCase):
     async def test_promoted_track_is_credited_as_a_request(self) -> None:
         party, lms, store = self.build(["p0", "p1", "p2"])
         await party.request({"url": "p2", "title": "P2"}, "g1")
-        self.assertTrue(store.requested_ever("p2"))
+        self.assertEqual(store.request_state("p2"), "pending")
         self.assertEqual(store.pending_count_for("g1"), 1)
 
     async def test_deep_curated_copy_does_not_drag_the_insertion_point(self) -> None:
@@ -496,12 +510,51 @@ class InjectionTests(unittest.IsolatedAsyncioTestCase):
             await party.request({"url": "p0", "title": "P0"}, "g1")  # playing now
         self.assertAlmostEqual(party.limiter.peek("g1"), 2.0, places=2)
 
+    async def test_played_song_is_refused_until_repeats_are_allowed(self) -> None:
+        """The reason the toggle exists: p1 was asked for and has been and gone."""
+        party, lms, store = self.build(["p0", "p1", "p2"], cur=2)
+        store.add_request("p1", "P1", "", None, "g1")
+        store.mark("p1", "played")
+
+        with self.assertRaises(RequestRefused) as caught:
+            await party.request({"url": "p1", "title": "P1"}, "g2")
+        self.assertEqual(caught.exception.code, "played")
+
+        party.set_allow_repeats(True)
+        await party.request({"url": "p1", "title": "P1"}, "g2")
+        self.assertEqual(lms.tracks, ["p0", "p1", "p2", "p1"])
+
+    async def test_repeats_do_not_unblock_a_waiting_request(self) -> None:
+        """Allowing repeats is about songs that have played, not queue spam."""
+        party, _, _ = self.build(["p0", "p1"])
+        party.set_allow_repeats(True)
+        await party.request(self.track(1), "g1")
+        with self.assertRaises(RequestRefused) as caught:
+            await party.request(self.track(1), "g2")
+        self.assertEqual(caught.exception.code, "duplicate")
+
+    async def test_repeats_do_not_unblock_a_veto(self) -> None:
+        """A veto is a deliberate 'not tonight', not the one-play rule."""
+        party, _, _ = self.build(["p0", "p1"])
+        await party.request(self.track(1), "g1")
+        await party.remove(1)
+        party.set_allow_repeats(True)
+        with self.assertRaises(RequestRefused) as caught:
+            await party.request(self.track(1), "g2")
+        self.assertEqual(caught.exception.code, "vetoed")
+
+    async def test_repeat_setting_survives_a_restart(self) -> None:
+        party, _, store = self.build(["p0", "p1"])
+        self.assertFalse(party.allow_repeats)
+        party.set_allow_repeats(True)
+        self.assertTrue(store.get("allow_repeats"))
+
     async def test_host_veto_marks_the_track_vetoed(self) -> None:
         party, lms, store = self.build(["p0", "p1"])
         await party.request(self.track(1), "g1")
         await party.remove(1)
         self.assertNotIn("req://1", lms.tracks)
-        self.assertTrue(store.requested_ever("req://1"))
+        self.assertEqual(store.request_state("req://1"), "vetoed")
 
 
 if __name__ == "__main__":
