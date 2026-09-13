@@ -64,6 +64,9 @@ class FakeLMS:
     async def play(self, player):
         self.playing = True
 
+    async def pause(self, player, on=1):
+        self.playing = not on
+
     async def set_shuffle(self, player, mode):
         self.commands.append(["shuffle", mode])
 
@@ -74,6 +77,7 @@ class FakeLMS:
         return {
             "playlist_cur_index": self.cur,
             "playlist_tracks": len(self.tracks),
+            "mode": "play" if self.playing else "pause",
             "playlist_loop": [
                 {"playlist index": i, "url": u, "title": u}
                 for i, u in enumerate(self.tracks)
@@ -548,6 +552,27 @@ class InjectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(party.allow_repeats)
         party.set_allow_repeats(True)
         self.assertTrue(store.get("allow_repeats"))
+
+    async def test_play_pause_pauses_a_playing_player(self) -> None:
+        party, lms, _ = self.build(["p0", "p1"])
+        lms.playing = True
+        self.assertEqual(await party.play_pause(), {"mode": "pause"})
+        self.assertFalse(lms.playing)
+
+    async def test_play_pause_resumes_a_stopped_player(self) -> None:
+        """`play`, not `pause 0` -- a stopped player ignores the latter."""
+        party, lms, _ = self.build(["p0", "p1"])
+        lms.playing = False
+        self.assertEqual(await party.play_pause(), {"mode": "play"})
+        self.assertTrue(lms.playing)
+
+    async def test_play_pause_follows_the_player_not_the_last_click(self) -> None:
+        """Someone paused from Material Skin; the next click must resume."""
+        party, lms, _ = self.build(["p0", "p1"])
+        lms.playing = True
+        await party.play_pause()
+        lms.playing = True            # paused and restarted elsewhere
+        self.assertEqual(await party.play_pause(), {"mode": "pause"})
 
     async def test_host_veto_marks_the_track_vetoed(self) -> None:
         party, lms, store = self.build(["p0", "p1"])

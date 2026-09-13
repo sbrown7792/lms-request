@@ -128,7 +128,8 @@ Guests land on `/`.
 
 ### While it's running
 
-The host console's **Queue** card removes and skips. The **Activity** card is a
+The host console's playback row plays, pauses and skips, and its **Queue** card
+removes individual tracks. The **Activity** card is a
 live feed of every request with the time, the client address, a short guest id,
 and its state; each row has a **Ban IP** button, and banned addresses appear as
 pills you can un-ban.

@@ -186,6 +186,14 @@ button.sm { padding: 7px 11px; font-size: 14px; }
 
 .actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
+/* Separates one set of controls from another inside a single card, so the
+   buttons group by what they act on rather than running together. */
+.group {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
 /* --- switch ------------------------------------------------------------ */
 /* For settings that stay put, where a button whose label flips can't show
    which way round things currently are. */

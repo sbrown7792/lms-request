@@ -661,6 +661,11 @@ async def api_skip(_: bool = Depends(require_host)):
     return {"ok": True}
 
 
+@app.post("/api/host/playpause")
+async def api_play_pause(_: bool = Depends(require_host)):
+    return await state.party.play_pause()
+
+
 @app.delete("/api/host/queue/{index}")
 async def api_remove(index: int, _: bool = Depends(require_host)):
     return await state.party.remove(index)

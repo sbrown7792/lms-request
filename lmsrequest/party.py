@@ -443,6 +443,26 @@ class Party:
     async def skip(self) -> None:
         await self.lms.playlist_jump(self.require_player(), "+1")
 
+    async def play_pause(self) -> dict:
+        """Flip playback and report the mode it ended up in.
+
+        Which way to flip is read back from LMS rather than taken from the
+        caller, so the button still does the right thing when someone has
+        paused from Material Skin or the player's own remote.
+
+        Resuming uses `play` rather than `pause 0` because the player may be
+        stopped rather than paused -- at the end of a queue, say -- and `pause`
+        does nothing from a stop.
+        """
+        player = self.require_player()
+        result = await self.lms.status(player)   # summary fields, no queue
+        playing = (result.get("mode") or "") == "play"
+        if playing:
+            await self.lms.pause(player, 1)
+        else:
+            await self.lms.play(player)
+        return {"mode": "pause" if playing else "play"}
+
     async def remove(self, index: int) -> dict:
         """Drop a queued track. Index-based so duplicates can't confuse it."""
         player = self.require_player()

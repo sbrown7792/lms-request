@@ -60,21 +60,28 @@
     <h2>4. Start the party</h2>
     <div class="actions">
       <button id="load">Load playlist &amp; play</button>
-      <button id="toggle" class="ghost">Pause requests</button>
+      <button id="playpause" class="ghost">Play</button>
       <button id="skip" class="ghost">Skip track</button>
-      <button id="reset" class="danger">Reset request history</button>
     </div>
 
-    <label class="switch">
-      <input type="checkbox" id="repeats">
-      <span class="switch-track"><span class="switch-knob"></span></span>
-      <span class="switch-text">
-        Allow re-requests
-        <span class="sub">Let guests ask again for a song that has already
-        played tonight. Songs you remove from the queue stay blocked either
-        way.</span>
-      </span>
-    </label>
+    <!-- Everything below the rule is about requests, not about playback. -->
+    <div class="group">
+      <div class="actions">
+        <button id="toggle" class="ghost">Pause requests</button>
+        <button id="reset" class="danger">Reset request history</button>
+      </div>
+
+      <label class="switch">
+        <input type="checkbox" id="repeats">
+        <span class="switch-track"><span class="switch-knob"></span></span>
+        <span class="switch-text">
+          Allow re-requests
+          <span class="sub">Let guests ask again for a song that has already
+          played tonight. Songs you remove from the queue stay blocked either
+          way.</span>
+        </span>
+      </label>
+    </div>
     <p class="sub" style="margin-top:16px">
       Guests join at <a id="join" href="/" target="_blank">…</a> — or show <a href="/tv" target="_blank">the TV view</a> with the QR code.
     </p>
@@ -298,6 +305,7 @@ async function refresh() {
       $("partyName").value = data.party_name || "";
     }
     $("toggle").textContent = data.requests_open ? "Pause requests" : "Resume requests";
+    $("playpause").textContent = data.mode === "play" ? "Pause" : "Play";
     // Don't yank the switch back mid-flight: a poll landing between the click
     // and its response would flip it the wrong way for a moment.
     if (!repeatsInFlight) $("repeats").checked = !!data.allow_repeats;
@@ -537,6 +545,14 @@ $("repeats").addEventListener("change", async () => {
   }
   refresh();
 });
+
+$("playpause").onclick = async () => {
+  try {
+    const r = await api("/api/host/playpause", { method: "POST" });
+    $("playpause").textContent = r.mode === "play" ? "Pause" : "Play";
+    setTimeout(refresh, 700);   // give the player a moment to report back
+  } catch (e) { toast(e.message, true); }
+};
 
 $("skip").onclick = async () => {
   try { await api("/api/host/skip", { method: "POST" }); setTimeout(refresh, 700); }
