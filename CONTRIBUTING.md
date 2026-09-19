@@ -123,6 +123,30 @@ step for three files that poll one endpoint is not a trade worth making.
   lock is re-acquired on `visibilitychange` — the browser drops it every time
   the page is hidden.
 
+## Screenshots
+
+`docs/screenshots/` is generated, not hand-captured. `scripts/demo_lms.py` is a
+stand-in LMS -- the JSON-RPC subset this app actually calls, invented tracks,
+and generated cover art served from a fake `/imageproxy`, so the artwork proxy
+is exercised rather than stubbed. Run the app against it and the whole console
+works with no music server and no risk of starting music in someone's house:
+
+```bash
+python3 scripts/demo_lms.py &
+
+LMSREQUEST_LMS_PORT=9999 LMSREQUEST_LMS_HOST=127.0.0.1 \
+LMSREQUEST_DATA_DIR=/tmp/demo LMSREQUEST_HOST_TOKEN=demo \
+LMSREQUEST_PUBLIC_URL=https://requests.example.com ./run.sh start
+```
+
+Pick a player and a playlist in `/host`, press Load, make a couple of requests
+from `/`, then `GET /state?cur=<n>&mode=play&elapsed=84` on port 9999 to put the
+demo player partway through a track. Shoot `/tv` at a 1280x720 viewport -- the
+layout is built for a 16:9 screen and clips if you shrink it.
+
+Keep the invented names. Generated cover art next to a real album title would
+read as a claim about a real record.
+
 ## Icons
 
 `lmsrequest/static/icons/favicon.svg` is the source; the PNGs, `favicon.ico` and

@@ -11,13 +11,35 @@ Search runs through **your LMS server's own TIDAL plugin**, so there's no second
 set of TIDAL credentials to manage, and anything a guest can find is guaranteed
 playable on your server.
 
-## Three views
+## What it looks like
 
-| Page | Who it's for |
-|---|---|
-| `/` | **Guests.** Search, tap, confirm. Shows what's playing and a few tracks ahead. The only page a guest needs. |
-| `/host` | **You.** Password-protected. Pick the player and the playlist, name the party, veto requests, see who's asking for what. |
-| `/tv` | **A spare screen.** Now playing with album art and a progress bar, the join QR code, and a short upcoming list. Keeps itself awake. |
+### `/tv` — a spare screen
+
+Now playing with album art, a progress bar, and a blurred zoom of the artwork
+behind it; the join QR code; and a short upcoming list. Requests are called out
+so the room knows someone asked for this one. The page keeps the screen awake by
+itself.
+
+![The TV view: a user-requested track playing, the join QR code, and the next five tracks](docs/screenshots/tv.webp)
+
+### `/` — guests
+
+Search, tap, confirm. That's the whole interface. Songs already on the list are
+greyed out rather than failing after the tap, and guests see the party name, not
+which speaker they're listening to.
+
+<img src="docs/screenshots/guest.webp" alt="The guest page: a search for 'hour' with results, two of them already queued" width="330">
+
+### `/host` — you
+
+Password-protected. Pick the player and the playlist, name the party, then run
+the night: play, pause, skip, veto a request, pause requests entirely. Below
+this, an activity feed shows the address behind every request with a one-click
+ban.
+
+![The host console: player and playlist pickers, party name, the party controls, and the live queue](docs/screenshots/host.webp)
+
+*(Screenshots use invented artists and generated cover art.)*
 
 ## What it does
 

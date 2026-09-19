@@ -17,6 +17,8 @@ lmsrequest.pid
 tests/
 scripts/check_static.py
 scripts/make_icons.py
+scripts/demo_lms.py
+docs/
 Dockerfile
 docker-compose.yml
 README.md
