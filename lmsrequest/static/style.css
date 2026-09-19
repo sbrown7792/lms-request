@@ -138,6 +138,16 @@ input:focus { border-color: var(--accent); }
   text-overflow: ellipsis;
 }
 
+/* A secondary name sharing a line with the title: same line, quieter, and it
+   truncates with the title rather than fighting it for room. */
+.by {
+  font-weight: 400;
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.by:not(:empty)::before { content: " · "; }
+
 .artist {
   color: var(--dim);
   font-size: 14px;

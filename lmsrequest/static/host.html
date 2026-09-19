@@ -448,10 +448,20 @@ async function loadActivity() {
         <div class="artist"></div>
       </div>
       <span class="tag"></span>`;
-    el.querySelector(".title").textContent = r.title || "(unknown)";
+    // Artist belongs with the title, not tacked onto the end of the address
+    // line -- reading "guest Qb1Q7 · Sunset Commute" suggests the guest is
+    // called that. Built as a child node rather than interpolated, since both
+    // strings come from a search result.
+    const title = el.querySelector(".title");
+    title.textContent = r.title || "(unknown)";
+    if (r.artist) {
+      const by = document.createElement("span");
+      by.className = "by";
+      by.textContent = r.artist;
+      title.appendChild(by);
+    }
     el.querySelector(".artist").textContent =
-      `${when(r.at)} · ${r.ip || "no address"} · guest ${r.guest.slice(0, 6)}` +
-      (r.artist ? ` · ${r.artist}` : "");
+      `${when(r.at)} · ${r.ip || "no address"} · guest ${r.guest.slice(0, 6)}`;
     el.querySelector(".tag").textContent = r.state;
 
     if (r.ip && !r.banned) {
