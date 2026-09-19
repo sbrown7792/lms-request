@@ -86,27 +86,27 @@ docker run -d --name lms-request -p 8080:8080 -v lms-request-data:/data \
   ghcr.io/sbrown7792/lms-request:latest
 ```
 
-Or with compose, which keeps the settings in a file you can edit later:
+Or with compose, which keeps the settings in a file you can edit later. Two
+files are all you need — no clone:
 
 ```bash
-git clone https://github.com/sbrown7792/lms-request.git
-cd lms-request
-cp .env.example .env
+base=https://raw.githubusercontent.com/sbrown7792/lms-request/root
+curl -O $base/docker-compose.deploy.yml
+curl -o .env $base/.env.example
 $EDITOR .env        # LMS_HOST at minimum
+
 docker compose -f docker-compose.deploy.yml up -d
 docker compose -f docker-compose.deploy.yml logs -f   # host password printed here
 ```
 
-That pulls the image rather than building it, so `docker-compose.deploy.yml` and
-`.env` are the only two files you actually need — copy those instead of cloning
-if you prefer.
+That pulls the published image rather than building anything.
 
 **Mount `/data`.** It holds `lmsrequest.db`: the cookie-signing secret, the ban
 list, your player and playlist choices, and the request log. Without a volume,
 every restart logs you out and forgets the bans.
 
-While the package is private, authenticate first with a token carrying
-`read:packages`:
+If a pull fails with `denied`, the GHCR package is private — log in with a
+GitHub token carrying `read:packages` and try again:
 
 ```bash
 echo "$GITHUB_TOKEN" | docker login ghcr.io -u <your-github-user> --password-stdin

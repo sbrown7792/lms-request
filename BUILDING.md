@@ -104,8 +104,12 @@ branch) publish `:edge`.
 Pushing anything under `.github/workflows/` needs a token with the `workflow`
 scope: `gh auth refresh -h github.com -s workflow`.
 
-If the package is private, consumers need `docker login ghcr.io` on the target
-with a token carrying `read:packages`.
+**A GHCR package is private until you say otherwise, even when its repository
+is public** — the two visibilities are separate, and nothing in the workflow
+changes it. Until it is flipped, every `docker pull` fails with `denied` and
+consumers need `docker login ghcr.io` with a token carrying `read:packages`.
+Publish it at Profile → Packages → the package → Package settings → Change
+visibility. There is no API for it.
 
 **Architecture.** The workflow builds `linux/amd64` only. For a Raspberry Pi,
 add `linux/arm64` to `platforms:` — it works, but the emulated `pip install`

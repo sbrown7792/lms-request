@@ -4,7 +4,7 @@
 #   ssh target 'cd /opt/lms-request && docker compose -f docker-compose.deploy.yml up -d'
 #
 # GHCR_OWNER must be set (see .env.example). Public images need no login; if the
-# package is private, log in on the target first:
+# pull fails with 'denied', the package is private -- log in on the target:
 #   echo $GITHUB_TOKEN | docker login ghcr.io -u <user> --password-stdin
 
 services:
