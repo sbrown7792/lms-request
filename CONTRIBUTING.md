@@ -147,6 +147,21 @@ layout is built for a 16:9 screen and clips if you shrink it.
 Keep the invented names. Generated cover art next to a real album title would
 read as a claim about a real record.
 
+## The social card
+
+`docs/social/social-preview.png` is what GitHub shows when the repo is linked
+anywhere. It is rendered from `docs/social/og.html`, which reuses the app's own
+colours and the favicon's level-meter mark so the card and the product look
+like the same thing. Edit the HTML, never the PNG:
+
+```bash
+python3 scripts/make_social.py    # needs Chrome/Chromium and Pillow
+```
+
+It renders at 2x and scales down -- Chrome's text rasterisation is visibly
+cleaner that way -- and always writes exactly 1280x640, the size GitHub asks
+for. Uploading it is manual: Settings -> Social preview. There is no API for it.
+
 ## Icons
 
 `lmsrequest/static/icons/favicon.svg` is the source; the PNGs, `favicon.ico` and

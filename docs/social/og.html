@@ -1,0 +1,170 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>LMS Request — social preview</title>
+<!--
+  Source for docs/social/social-preview.png, the repository's social card.
+  Exactly 1280x640, which is what GitHub asks for. Rendered with
+  scripts/make_social.py; edit here, not the PNG.
+
+  Colours and the level-meter mark are lifted from the app's own stylesheet
+  and favicon, so the card and the product look like the same thing.
+-->
+<style>
+  :root {
+    --bg: #0b0b0f;
+    --panel: #16161d;
+    --line: #2a2a36;
+    --text: #f2f2f7;
+    --dim: #9a9aa8;
+    --accent: #4fd1c5;
+  }
+
+  * { box-sizing: border-box; margin: 0; }
+
+  body {
+    width: 1280px;
+    height: 640px;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* The same idea as the TV view's backdrop: colour bled in from the artwork,
+     well out of focus, so the card has depth without competing with the type. */
+  .wash {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(58% 78% at 6% 22%, rgba(79, 209, 197, 0.38), transparent 72%),
+      radial-gradient(48% 66% at 88% 86%, rgba(255, 95, 158, 0.24), transparent 70%),
+      radial-gradient(40% 55% at 72% 12%, rgba(255, 176, 92, 0.16), transparent 70%);
+  }
+
+  .frame {
+    position: relative;
+    height: 100%;
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    align-items: center;
+    gap: 56px;
+    padding: 64px 72px;
+  }
+
+  .brand { display: flex; align-items: center; gap: 22px; }
+  .mark { width: 88px; height: 88px; flex: none; }
+
+  h1 {
+    font-size: 76px;
+    font-weight: 800;
+    letter-spacing: -0.025em;
+    line-height: 1;
+  }
+
+  .tagline {
+    margin-top: 30px;
+    font-size: 33px;
+    font-weight: 600;
+    line-height: 1.25;
+    letter-spacing: -0.01em;
+  }
+
+  .tagline em { color: var(--accent); font-style: normal; }
+
+  .detail {
+    margin-top: 16px;
+    font-size: 23px;
+    color: var(--dim);
+    line-height: 1.4;
+  }
+
+  .chips { margin-top: 34px; display: flex; gap: 10px; flex-wrap: wrap; }
+
+  .chip {
+    border: 1px solid var(--line);
+    background: rgba(22, 22, 29, 0.72);
+    border-radius: 99px;
+    padding: 9px 18px;
+    font-size: 19px;
+    font-weight: 600;
+    color: #cfcfdb;
+  }
+
+  /* The whole product in miniature: a track playing, and a badge saying
+     someone in the room asked for it. One focal point rather than a panel of
+     detail that turns to mush at thumbnail size. */
+  .card { position: relative; }
+
+  .art {
+    width: 340px;
+    height: 340px;
+    border-radius: 26px;
+    background:
+      radial-gradient(60% 55% at 70% 22%, rgba(255, 255, 255, 0.22), transparent 60%),
+      linear-gradient(160deg, #e879b9, #7c6ce0 52%, #3f6fd6);
+    box-shadow: 0 28px 70px rgba(0, 0, 0, 0.55);
+  }
+
+  .track { margin-top: 26px; font-size: 31px; font-weight: 700; letter-spacing: -0.01em; }
+  .by { margin-top: 4px; font-size: 23px; color: var(--dim); }
+
+  .shout {
+    position: absolute;
+    left: -26px;
+    top: 288px;
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    padding: 10px 20px;
+    border-radius: 99px;
+    background: linear-gradient(95deg, #ffcf5c, #ff8a3d 55%, #ff5f9e);
+    color: #2a1300;
+    font-size: 19px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    box-shadow: 0 6px 26px rgba(255, 138, 61, 0.45);
+  }
+</style>
+
+<div class="wash"></div>
+
+<div class="frame">
+  <div>
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
+        <defs>
+          <linearGradient id="bars" x1="0" y1="64" x2="64" y2="0">
+            <stop offset="0" stop-color="#4fd1c5"/>
+            <stop offset="1" stop-color="#8be9dd"/>
+          </linearGradient>
+        </defs>
+        <rect width="64" height="64" rx="15" fill="#0b0b0f"/>
+        <g fill="url(#bars)">
+          <rect x="11.25" y="32" width="7" height="18" rx="3.5"/>
+          <rect x="22.75" y="16" width="7" height="34" rx="3.5"/>
+          <rect x="34.25" y="24" width="7" height="26" rx="3.5"/>
+          <rect x="45.75" y="36" width="7" height="14" rx="3.5"/>
+        </g>
+      </svg>
+      <h1>LMS Request</h1>
+    </div>
+
+    <p class="tagline">Let your guests request songs &mdash;<br>from <em>your</em> Lyrion Media Server.</p>
+    <p class="detail">They scan a QR code, search TIDAL, and tap.<br>Their song plays next. No app, no account.</p>
+
+    <div class="chips">
+      <span class="chip">Self-hosted</span>
+      <span class="chip">TIDAL search</span>
+      <span class="chip">Docker</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="art"></div>
+    <div class="track">Gold Rush Hour</div>
+    <div class="by">Marla Quinn</div>
+    <div class="shout">&#10022; User request!</div>
+  </div>
+</div>
