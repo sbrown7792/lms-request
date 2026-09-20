@@ -3,9 +3,9 @@
 #   scp docker-compose.deploy.yml .env  target:/opt/lms-request/
 #   ssh target 'cd /opt/lms-request && docker compose -f docker-compose.deploy.yml up -d'
 #
-# GHCR_OWNER must be set (see .env.example). Public images need no login; if the
-# pull fails with 'denied', the package is private -- log in on the target:
-#   echo $GITHUB_TOKEN | docker login ghcr.io -u <user> --password-stdin
+# GHCR_OWNER must be set (see .env.example). The published image is public, so
+# no docker login is needed -- a fork publishing its own would need its package
+# made public too, since a GHCR package stays private by default.
 
 services:
   lms-request:

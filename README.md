@@ -78,7 +78,8 @@ ban.
 
 ## Quick start
 
-Prebuilt `linux/amd64` images are published to `ghcr.io/sbrown7792/lms-request`.
+Prebuilt `linux/amd64` images are published to
+[`ghcr.io/sbrown7792/lms-request`](https://github.com/sbrown7792/lms-request/pkgs/container/lms-request) — public, so nothing to log in to.
 
 ```bash
 docker run -d --name lms-request -p 8080:8080 -v lms-request-data:/data \
@@ -101,19 +102,17 @@ docker compose -f docker-compose.deploy.yml logs -f   # host password printed he
 
 That pulls the published image rather than building anything.
 
+Tags are `:latest` (newest release), `:0.3` (newest 0.3.x), an exact version
+like `:0.3.1`, or `:edge` for the newest build of the default branch. Set
+`IMAGE_TAG` in `.env` to pin one; the [package page](https://github.com/sbrown7792/lms-request/pkgs/container/lms-request) lists what's
+available.
+
 **Mount `/data`.** It holds `lmsrequest.db`: the cookie-signing secret, the ban
 list, your player and playlist choices, and the request log. Without a volume,
 every restart logs you out and forgets the bans.
 
-If a pull fails with `denied`, the GHCR package is private — log in with a
-GitHub token carrying `read:packages` and try again:
-
-```bash
-echo "$GITHUB_TOKEN" | docker login ghcr.io -u <your-github-user> --password-stdin
-```
-
-Then confirm it can really reach LMS and TIDAL. This is the one check CI can't
-do for you, because it needs a live server:
+Once it's up, confirm it can really reach LMS and TIDAL. This is the one check
+CI can't do for you, because it needs a live server:
 
 ```bash
 docker compose -f docker-compose.deploy.yml exec lms-request python scripts/probe.py
